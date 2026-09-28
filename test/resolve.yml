@@ -28,3 +28,16 @@
           - stack_ops_user == 'ops'
           - stack_bootstrap_user == stack.server.bootstrap_user
         quiet: true
+
+    - name: Assert stack.yaml says what test/answers.yaml answered
+      ansible.builtin.assert:
+        that:
+          - stack.server.address == '192.0.2.10'
+          - stack.network.clients == ['laptop', 'phone']
+          - stack.dns.zones == ['infra.example.org', 'example.org']
+          - stack.infra_domain == 'infra.example.org'
+          - stack.acme_email == 'admin@example.org'
+          - stack.server.public_ports == [80, 443, 25, 465, 587, 993]
+          - stack.apps.mail.hostname == 'mail.example.org'
+          - stack.apps.mail.domains == ['example.org']
+        quiet: true

@@ -1,5 +1,5 @@
 variable "project" {
-  description = "Directory of the project: stack.yaml and ca.pem are read from it. bin/stack sets it."
+  description = "Directory of the project: stack.yaml and ca.pem are read from it. damstack sets it."
   type        = string
 }
 

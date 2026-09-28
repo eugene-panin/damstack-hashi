@@ -1,0 +1,13 @@
+server_address: 192.0.2.10
+bootstrap_user: root
+ops_user: ops
+public_interface: eth0
+infra_domain: infra.example.org
+acme_email: admin@example.org
+dns_zones: [infra.example.org, example.org]
+wireguard_clients: [laptop, phone]
+mail: true
+mail_hostname: mail.example.org
+mail_domains: [example.org]
+vault_cloudflare_api_token: test-cloudflare-api-token
+vault_cloudflare_traefik_token: test-cloudflare-traefik-token
