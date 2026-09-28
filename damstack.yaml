@@ -16,6 +16,10 @@ questions:
   - name: bootstrap_user
     prompt: The user you log in to the server with today
     default: root
+  - name: ops_user
+    prompt: The user you will log in to the server with from now on
+    default: ops
+    pattern: "^[a-z_][a-z0-9_-]{0,31}$"
   - name: public_interface
     prompt: The server's network interface to the internet (ip -brief address on the server shows it)
     default: eth0

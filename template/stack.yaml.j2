@@ -7,10 +7,14 @@ name: {{ name }}
 server:
   # Public address of the server, as the provider gave it.
   address: {{ server_address }}
-  # The user you log in with today; damstack bootstrap replaces it with ops_user.
+  # The user you log in with today; the bootstrap step replaces it with ops_user.
   bootstrap_user: {{ bootstrap_user }}
-  # The one user that may log in afterwards, with your SSH key.
-  ops_user: ops
+  # The one user that may log in afterwards, with your SSH key. Chosen once: a set up server
+  # refuses another name.
+  ops_user: {{ ops_user }}
+  # A user of that name that damstack did not create is left alone, unless this says to take
+  # it over: then your key is added to it, and its other keys stay.
+  adopt_user: false
   # Network interface of the server to the internet.
   public_interface: {{ public_interface }}
   # Ports open to the internet: 80 and 443 for Traefik{% if mail %}, 25, 465, 587 and 993 for mail{% endif %}.

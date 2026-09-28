@@ -1,26 +1,111 @@
 ---
-- name: Create the ops user as the user the server came with
+- name: Create or take over the ops user, as the user the server came with
   hosts: stack
   become: true
   gather_facts: false
-  ignore_unreachable: true
   vars:
     ansible_user: "{{ stack_bootstrap_user }}"
+    _stack_marker: /etc/damstack/ops-user
+    _stack_adopt: "{{ stack.server.adopt_user | default(false) | bool }}"
   tasks:
-    - name: Ensure the ops user exists
+    - name: Refuse a user name Linux or the stack cannot take
+      ansible.builtin.assert:
+        that:
+          - stack_ops_user is match('^[a-z_][a-z0-9_-]{0,31}$')
+          - stack_ops_user != 'root'
+        fail_msg: >-
+          server.ops_user in stack.yaml is {{ stack_ops_user }}; it must be a Linux user name,
+          lowercase letters, digits, - and _, and not root.
+        quiet: true
+
+    - name: Refuse another ops user than the one this project set the server up for
+      ansible.builtin.assert:
+        that: _stack_bootstrapped.user | default(stack_ops_user) == stack_ops_user
+        fail_msg: >-
+          This server is set up for {{ _stack_bootstrapped.user | default('') }}, and stack.yaml now
+          says {{ stack_ops_user }}. Changing the ops user of a set up server is not supported: put
+          server.ops_user back.
+        quiet: true
+      vars:
+        _stack_bootstrapped: >-
+          {{ lookup('ansible.builtin.file', stack_project ~ '/.damstack/bootstrap.yml', errors='ignore')
+             | default('', true) | from_yaml or {} }}
+
+    - name: Check whether the user the server came with still logs in
+      ansible.builtin.ping:
+      register: _stack_first_login
+      ignore_unreachable: true
+
+    - name: Leave this play once the server is locked down to the ops user
+      ansible.builtin.meta: end_host
+      when: _stack_first_login.unreachable | default(false)
+
+    - name: Look the ops user up
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ stack_ops_user }}"
+        fail_key: false
+
+    - name: Read which user damstack set up on this server
+      ansible.builtin.slurp:
+        src: "{{ _stack_marker }}"
+      register: _stack_marker_file
+      failed_when: false
+
+    - name: Decide how to treat the ops user
+      ansible.builtin.set_fact:
+        _stack_exists: "{{ ansible_facts.getent_passwd[stack_ops_user] is not none }}"
+        _stack_uid: "{{ (ansible_facts.getent_passwd[stack_ops_user] or [0, 0])[1] | int }}"
+        _stack_managed: "{{ (_stack_marker_file.content | default('') | b64decode | from_yaml) or {} }}"
+
+    - name: Refuse a system user
+      ansible.builtin.assert:
+        that: not _stack_exists or _stack_uid | int >= 1000
+        fail_msg: >-
+          {{ stack_ops_user }} is a system user of the server (uid {{ _stack_uid }}); choose another
+          server.ops_user in stack.yaml.
+        quiet: true
+
+    - name: Refuse to switch to another ops user than the one set up
+      ansible.builtin.assert:
+        that: _stack_managed.user | default(stack_ops_user) == stack_ops_user
+        fail_msg: >-
+          This server is set up for {{ _stack_managed.user | default('') }}, and stack.yaml now says
+          {{ stack_ops_user }}. Changing the ops user of a set up server is not supported: put
+          server.ops_user back.
+        quiet: true
+
+    - name: Refuse to take over a user damstack did not create, unless told to
+      ansible.builtin.assert:
+        that: >-
+          not _stack_exists or _stack_managed.user | default('') == stack_ops_user
+          or stack_ops_user == stack_bootstrap_user or _stack_adopt
+        fail_msg: >-
+          {{ stack_ops_user }} already exists on the server and damstack did not create it. Nothing
+          was changed. Either choose another server.ops_user in stack.yaml, or set
+          server.adopt_user: true to take it over: your key is added to it, its other keys stay.
+        quiet: true
+
+    - name: Remember whether damstack created the user or took it over
+      ansible.builtin.set_fact:
+        _stack_created: >-
+          {{ _stack_managed.created | default(false) | bool
+             if _stack_managed.user | default('') == stack_ops_user else not _stack_exists }}
+
+    - name: Ensure the ops user exists and may use sudo
       ansible.builtin.user:
         name: "{{ stack_ops_user }}"
-        shell: /bin/bash
+        shell: "{{ '/bin/bash' if _stack_created | bool else omit }}"
         groups: sudo
         append: true
         create_home: true
         state: present
 
-    - name: Ensure the ops user logs in with the declared key
+    - name: Ensure the ops user logs in with your key; with no other key only if damstack created it
       ansible.posix.authorized_key:
         user: "{{ stack_ops_user }}"
         key: "{{ lookup('ansible.builtin.env', 'DAMSTACK_SSH_PUBLIC_KEY') }}"
-        exclusive: true
+        exclusive: "{{ _stack_created | bool }}"
         state: present
 
     - name: Let the ops user use sudo without a password
@@ -32,11 +117,40 @@
         mode: '0440'
         validate: /usr/sbin/visudo -cf %s
 
+    - name: Ensure the directory of the damstack markers exists
+      ansible.builtin.file:
+        path: "{{ _stack_marker | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Mark the ops user as set up by damstack
+      ansible.builtin.copy:
+        dest: "{{ _stack_marker }}"
+        content: "{{ {'user': stack_ops_user, 'created': _stack_created | bool} | to_nice_yaml }}"
+        owner: root
+        group: root
+        mode: '0644'
+
 - name: Close every login but the ops user's key, connecting as the ops user
   hosts: stack
   become: true
   gather_facts: false
   tasks:
+    - name: Read which user damstack set up on this server
+      ansible.builtin.slurp:
+        src: /etc/damstack/ops-user
+      register: _stack_marker_file
+
+    - name: Refuse to go on for another ops user than the one set up
+      ansible.builtin.assert:
+        that: (_stack_marker_file.content | b64decode | from_yaml).user == stack_ops_user
+        fail_msg: >-
+          This server is set up for {{ (_stack_marker_file.content | b64decode | from_yaml).user }},
+          and stack.yaml says {{ stack_ops_user }}; put server.ops_user back.
+        quiet: true
+
     - name: Ensure unattended upgrades and fail2ban are installed
       ansible.builtin.apt:
         name:
@@ -70,6 +184,14 @@
         mode: '0644'
         validate: /usr/sbin/sshd -t -f %s
       notify: Restart ssh
+
+    - name: Remember in the project which user the server is set up for
+      ansible.builtin.copy:
+        dest: "{{ stack_project }}/.damstack/bootstrap.yml"
+        content: "{{ {'user': stack_ops_user} | to_nice_yaml }}"
+        mode: '0644'
+      delegate_to: localhost
+      become: false
 
   handlers:
     - name: Restart ssh

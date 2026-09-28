@@ -5,11 +5,20 @@
   "public_interface": "eth0",
   "infra_domain": "infra.example.org",
   "acme_email": "admin@example.org",
-  "dns_zones": ["infra.example.org", "example.org"],
-  "wireguard_clients": ["laptop", "phone"],
+  "dns_zones": [
+    "infra.example.org",
+    "example.org"
+  ],
+  "wireguard_clients": [
+    "laptop",
+    "phone"
+  ],
   "mail": true,
   "mail_hostname": "mail.example.org",
-  "mail_domains": ["example.org"],
+  "mail_domains": [
+    "example.org"
+  ],
   "cloudflare_api_token": "test-cloudflare-api-token",
-  "cloudflare_traefik_token": "test-cloudflare-traefik-token"
+  "cloudflare_traefik_token": "test-cloudflare-traefik-token",
+  "ops_user": "ops"
 }
