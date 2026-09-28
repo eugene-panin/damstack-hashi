@@ -1,5 +1,5 @@
 apiVersion: damstack/v1
-name: hashistack
+name: hashi
 description: Consul, Vault and Nomad on one server, over WireGuard, with Traefik, backups and apps such as mail
 requires:
   damstack: ">=0.1.0"

@@ -1,11 +1,11 @@
-# damstack-hashistack
+# damstack-hashi
 
 A [damstack](https://github.com/eugene-panin/damstack) stack: Consul, Vault
 and Nomad on one server, over WireGuard, with Traefik in front, nightly
 backups, and apps such as mail.
 
 ```bash
-damstack deploy hashistack
+damstack deploy hashi
 ```
 
 damstack asks the questions in [`damstack.yaml`](damstack.yaml), writes the
