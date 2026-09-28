@@ -1,0 +1,60 @@
+# The one file to edit. Ansible, OpenTofu and the policies of the hashistack stack read it.
+# Secrets are not here: they are in vault.yml, encrypted.
+
+# Name of the stack, also the Consul and Nomad datacenter.
+name: {{ name }}
+
+server:
+  # Public address of the server, as the provider gave it.
+  address: {{ server_address }}
+  # The user you log in with today; damstack bootstrap replaces it with ops_user.
+  bootstrap_user: {{ bootstrap_user }}
+  # The one user that may log in afterwards, with your SSH key.
+  ops_user: ops
+  # Network interface of the server to the internet.
+  public_interface: {{ public_interface }}
+  # Ports open to the internet: 80 and 443 for Traefik{% if mail %}, 25, 465, 587 and 993 for mail{% endif %}.
+  public_ports: [80, 443{% if mail %}, 25, 465, 587, 993{% endif %}]
+
+# Private network over WireGuard. The server takes the first address of this /24,
+# each client the next ones, in order.
+network:
+  cidr: 10.77.0.0/24
+  clients: [{{ wireguard_clients | join(", ") }}]
+
+# Admin pages: consul., nomad. and vault.<infra_domain>, through the private network only.
+infra_domain: {{ infra_domain }}
+# Contact of the Let's Encrypt account of Traefik.
+acme_email: {{ acme_email }}
+
+# Where DNS records go. With cloudflare, every domain in zones gets its records through
+# the Cloudflare API; records of other domains are printed by damstack output manual_records,
+# to be created by hand.
+dns:
+  provider: cloudflare
+  zones: [{{ dns_zones | join(", ") }}]
+
+# Backups, made with restic: on the server every night, and on your laptop when damstack
+# pulls them. restic compresses, deduplicates and encrypts them with vault_backup_password.
+backup:
+  schedule: "03:00"
+  compression: auto
+  server:
+    path: /var/backups/restic
+    keep: {daily: 7, weekly: 4, monthly: 6}
+  laptop:
+    path: ~/Backups/{{ name }}
+    keep: {daily: 30, weekly: 12, monthly: 24}
+    pull_every: 1h
+
+# Apps on the platform, each a module of its own. Deleting the block of an app removes the
+# app; the policies refuse the plan while it would destroy the app's data.
+{% if mail -%}
+apps:
+  mail:
+    hostname: {{ mail_hostname }}
+    domains: [{{ mail_domains | join(", ") }}]
+    acme_email: {{ acme_email }}
+{%- else -%}
+apps: {}
+{%- endif %}

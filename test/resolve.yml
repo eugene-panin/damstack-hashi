@@ -1,0 +1,30 @@
+---
+- name: Check that every variable the roles read resolves from the project
+  hosts: stack
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Assert the generated secrets and the stack settings
+      ansible.builtin.assert:
+        that:
+          - ansible_host == stack.server.address
+          - stack_address == wireguard_address.split('/')[0]
+          - consul_datacenter == stack.name
+          - consul_gossip_keys | length == 1
+          - consul_gossip_keys[0] is match('^[A-Za-z0-9+/]{43}=$')
+          - nomad_gossip_keys[0] is match('^[A-Za-z0-9+/]{43}=$')
+          - consul_acl_bootstrap_token | length == 36
+          - consul_acl_agent_token | length == 36
+          - nomad_consul_token | length == 36
+          - "'BEGIN PRIVATE KEY' in consul_pki_ca_key"
+          - "'BEGIN CERTIFICATE' in consul_pki_ca_cert"
+          - consul_pki_ca_cert == nomad_pki_ca_cert
+          - nomad_host_networks[0].public.interface == stack.server.public_interface
+          - wireguard_client_list | map(attribute='name') | list == stack.network.clients
+          - firewall_allow | selectattr('interface', 'equalto', 'nomad') | list | length == 1
+          - firewall_allow | map(attribute='port') | select('defined') | list == stack.server.public_ports
+          - backup_password | length > 20
+          - backup_hook_environment.VAULT_TOKEN | length == 36
+          - stack_ops_user == 'ops'
+          - stack_bootstrap_user == stack.server.bootstrap_user
+        quiet: true

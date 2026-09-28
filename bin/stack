@@ -1,0 +1,342 @@
+#!/usr/bin/env python3
+"""The hashistack stack: what damstack runs inside damstack-toolbox.
+
+The stack is mounted read-only at $DAMSTACK_STACK; everything written goes to
+the project at $DAMSTACK_PROJECT.
+"""
+
+import argparse
+import base64
+import datetime
+import ipaddress
+import json
+import os
+import secrets
+import shutil
+import subprocess
+import sys
+import tempfile
+import uuid
+from pathlib import Path
+
+import jinja2
+import yaml
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.x509.oid import NameOID
+
+STACK = Path(os.environ.get("DAMSTACK_STACK") or Path(__file__).resolve().parent.parent)
+PROJECT = Path(os.environ.get("DAMSTACK_PROJECT", "/work"))
+
+SECRET_ANSWERS = {
+    "cloudflare_api_token": "vault_cloudflare_api_token",
+    "cloudflare_traefik_token": "vault_cloudflare_traefik_token",
+}
+
+
+class Project:
+    def __init__(self, root):
+        self.root = Path(root)
+        self.work = self.root / ".damstack/work"
+        self.stack_yaml = self.root / "stack.yaml"
+        self.vault = self.root / "vault.yml"
+        self.ca = self.root / "ca.pem"
+        self.state = self.root / "state/infra.tfstate"
+        self.plan = self.work / "infra.tfplan"
+        self.vault_init = self.work / "vault-init.json"
+
+    def stack(self):
+        return yaml.safe_load(self.stack_yaml.read_text())
+
+    def server_address(self):
+        return str(next(ipaddress.ip_network(self.stack()["network"]["cidr"]).hosts()))
+
+
+def die(message):
+    sys.exit(f"hashistack: {message}")
+
+
+def password_file():
+    path = os.environ.get("DAMSTACK_VAULT_PASSWORD_FILE")
+    if not path or not Path(path).is_file():
+        die("DAMSTACK_VAULT_PASSWORD_FILE does not name the vault password file; damstack sets it")
+    return path
+
+
+def run(command, env=None, **kwargs):
+    merged = os.environ | {"ANSIBLE_VAULT_PASSWORD_FILE": password_file()} | (env or {})
+    return subprocess.run([str(c) for c in command], env=merged, check=True, **kwargs)
+
+
+def read_vault(p):
+    out = run(["ansible-vault", "view", p.vault], stdin=subprocess.DEVNULL, capture_output=True, text=True).stdout
+    return yaml.safe_load(out) or {}
+
+
+def write_vault(p, data):
+    run(["ansible-vault", "encrypt", "--output", p.vault, "-"], input=yaml.safe_dump(data, sort_keys=True), text=True,
+        capture_output=True)
+
+
+def make_ca(name):
+    key = ec.generate_private_key(ec.SECP256R1())
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"{name} CA")])
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(minutes=5))
+        .not_valid_after(now + datetime.timedelta(days=3650))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .add_extension(x509.KeyUsage(digital_signature=True, key_cert_sign=True, crl_sign=True, content_commitment=False,
+                                     key_encipherment=False, data_encipherment=False, key_agreement=False,
+                                     encipher_only=False, decipher_only=False), critical=True)
+        .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False)
+        .sign(key, hashes.SHA256())
+    )
+    key_pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                serialization.NoEncryption()).decode()
+    return cert.public_bytes(serialization.Encoding.PEM).decode(), key_pem
+
+
+def gossip_key():
+    return base64.b64encode(secrets.token_bytes(32)).decode()
+
+
+def init(p, answers):
+    for path in (p.stack_yaml, p.vault, p.ca):
+        if path.exists():
+            die(f"{path} exists: a project is set up once")
+    answers = dict(answers)
+    vault = {key: answers.pop(answer) for answer, key in SECRET_ANSWERS.items() if answer in answers}
+
+    template = jinja2.Environment(loader=jinja2.FileSystemLoader(STACK / "template"), undefined=jinja2.StrictUndefined,
+                                  keep_trailing_newline=True).get_template("stack.yaml.j2")
+    stack_yaml = template.render(**answers)
+    yaml.safe_load(stack_yaml)
+
+    ca_pem, ca_key = make_ca(answers["name"])
+    vault |= {
+        "vault_stack_ca_key": ca_key,
+        "vault_consul_gossip_key": gossip_key(),
+        "vault_consul_acl_bootstrap_token": str(uuid.uuid4()),
+        "vault_consul_acl_dns_token": str(uuid.uuid4()),
+        "vault_consul_acl_agent_token": str(uuid.uuid4()),
+        "vault_nomad_gossip_key": gossip_key(),
+        "vault_nomad_acl_bootstrap_token": str(uuid.uuid4()),
+        "vault_nomad_consul_token": str(uuid.uuid4()),
+        "vault_tofu_state_passphrase": secrets.token_hex(32),
+        "vault_backup_password": secrets.token_urlsafe(32),
+        "vault_backup_vault_token": str(uuid.uuid4()),
+    }
+
+    for d in (p.root / "state", p.root / "clients", p.work):
+        d.mkdir(parents=True, exist_ok=True)
+    write_vault(p, vault)
+    p.ca.write_text(ca_pem)
+    p.stack_yaml.write_text(stack_yaml)
+    print(f"wrote {p.stack_yaml.name}, {p.ca.name} and the encrypted {p.vault.name}")
+
+
+def ansible_env(p):
+    ssh_args = f"-F /dev/null -o UserKnownHostsFile={p.root}/.damstack/known_hosts -o StrictHostKeyChecking=accept-new"
+    return {
+        "ANSIBLE_CONFIG": str(STACK / "ansible/ansible.cfg"),
+        "ANSIBLE_COLLECTIONS_PATH": str(p.work / "collections"),
+        "ANSIBLE_LOCAL_TEMP": str(p.work / "ansible-tmp"),
+        "ANSIBLE_SSH_ARGS": ssh_args,
+        "DAMSTACK_PROJECT": str(p.root),
+    }
+
+
+def ansible_deps(p):
+    run(["ansible-galaxy", "collection", "install", "-r", STACK / "ansible/requirements.yml", "-p", p.work / "collections"],
+        env=ansible_env(p), stdout=subprocess.DEVNULL)
+
+
+def playbook(p, name, *extra):
+    ansible_deps(p)
+    command = ["ansible-playbook", "-i", STACK / "ansible/inventory", "-e", f"@{p.vault}", STACK / f"ansible/playbooks/{name}.yml"]
+    if key := os.environ.get("DAMSTACK_SSH_KEY"):
+        command += ["--private-key", key]
+    run(command + list(extra), env=ansible_env(p))
+
+
+def import_vault_init(p):
+    if not p.vault_init.exists():
+        return
+    init_output = json.loads(p.vault_init.read_text())
+    vault = read_vault(p)
+    vault["vault_unseal_keys"] = init_output["keys_base64"]
+    vault["vault_root_token"] = init_output["root_token"]
+    write_vault(p, vault)
+    p.vault_init.unlink()
+    print("moved the Vault unseal keys and root token into vault.yml")
+
+
+def tofu_env(p, vault):
+    address = p.server_address()
+    ca = str(p.ca)
+    env = {
+        "TF_DATA_DIR": str(p.work / "tofu"),
+        "TF_IN_AUTOMATION": "1",
+        "TF_VAR_project": str(p.root),
+        "TF_VAR_state_passphrase": vault["vault_tofu_state_passphrase"],
+        "TF_VAR_traefik_cloudflare_token": vault.get("vault_cloudflare_traefik_token", ""),
+        "CLOUDFLARE_API_TOKEN": vault.get("vault_cloudflare_api_token", ""),
+        "CONSUL_HTTP_ADDR": f"https://{address}:8501", "CONSUL_CACERT": ca,
+        "CONSUL_HTTP_TOKEN": vault["vault_consul_acl_bootstrap_token"],
+        "NOMAD_ADDR": f"https://{address}:4646", "NOMAD_CACERT": ca,
+        "NOMAD_TOKEN": vault["vault_nomad_acl_bootstrap_token"],
+        "VAULT_ADDR": f"https://{address}:8200", "VAULT_CACERT": ca,
+    }
+    if "vault_root_token" in vault:
+        env["VAULT_TOKEN"] = vault["vault_root_token"]
+    return env
+
+
+def tofu(p, env, *args, **kwargs):
+    return run(["tofu", f"-chdir={STACK / 'infra'}", *args], env=env, **kwargs)
+
+
+def tofu_init(p, env):
+    p.state.parent.mkdir(parents=True, exist_ok=True)
+    tofu(p, env, "init", "-input=false", f"-backend-config=path={p.state}", "-lockfile=readonly", stdout=subprocess.DEVNULL)
+
+
+def check_plan(p, env):
+    plan_json = p.work / "plan.json"
+    with plan_json.open("w") as f:
+        tofu(p, env, "show", "-json", p.plan, stdout=f)
+    data = [f"--data={STACK / 'policy/data'}", f"--data={p.stack_yaml}"]
+    run(["conftest", "test", "--no-color", f"--policy={STACK / 'policy'}", *data, "--namespace=terraform", plan_json])
+    jobs = p.work / "jobs"
+    shutil.rmtree(jobs, ignore_errors=True)
+    jobs.mkdir()
+    for change in json.loads(plan_json.read_text()).get("resource_changes", []):
+        spec = (change.get("change", {}).get("after") or {}).get("jobspec")
+        if change.get("type") == "nomad_job" and spec:
+            (jobs / f"{change['address']}.nomad.hcl").write_text(spec)
+    files = sorted(jobs.glob("*.nomad.hcl"))
+    if files:
+        run(["conftest", "test", "--no-color", "--parser=hcl2", f"--policy={STACK / 'policy'}", *data, "--namespace=nomad",
+             *files])
+
+
+def plan(p):
+    env = tofu_env(p, read_vault(p))
+    tofu_init(p, env)
+    tofu(p, env, "plan", "-input=false", f"-out={p.plan}")
+    check_plan(p, env)
+
+
+def apply(p):
+    if not p.plan.exists():
+        die("no plan to apply; run the plan step first")
+    env = tofu_env(p, read_vault(p))
+    tofu_init(p, env)
+    check_plan(p, env)
+    tofu(p, env, "apply", "-input=false", p.plan)
+    p.plan.unlink()
+
+
+def output(p, name):
+    env = tofu_env(p, read_vault(p))
+    tofu_init(p, env)
+    tofu(p, env, "output", *([name] if name else []))
+
+
+def check():
+    """Prove the stack works without a server: set up a project from the test
+    answers, then check the policies, the OpenTofu configuration and the
+    playbooks against it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        password = tmp / "vault-pass"
+        password.write_text(secrets.token_urlsafe(32))
+        os.environ["DAMSTACK_VAULT_PASSWORD_FILE"] = str(password)
+        p = Project(tmp / "project")
+        p.root.mkdir()
+
+        step("init from test/answers.json")
+        init(p, json.loads((STACK / "test/answers.json").read_text()))
+        vault = read_vault(p)
+        missing = {"vault_stack_ca_key", "vault_tofu_state_passphrase", "vault_backup_password",
+                   "vault_cloudflare_api_token"} - vault.keys()
+        if missing or not p.vault.read_text().startswith("$ANSIBLE_VAULT"):
+            die(f"init left the vault unencrypted or without {missing}")
+        try:
+            init(p, {})
+            die("a second init overwrote the project")
+        except SystemExit as err:
+            if "is set up once" not in str(err):
+                raise
+
+        step("policies pass their tests")
+        run(["conftest", "verify", "--no-color", f"--policy={STACK / 'policy'}", f"--data={STACK / 'policy/data'}",
+             f"--data={p.stack_yaml}"])
+
+        step("OpenTofu validates against the project")
+        env = tofu_env(p, vault)
+        tofu_init(p, env)
+        tofu(p, env, "validate", "-no-color")
+
+        step("the playbooks parse and every variable the roles read resolves")
+        env = ansible_env(p)
+        ansible_deps(p)
+        for name in ("bootstrap", "provision"):
+            run(["ansible-playbook", "-i", STACK / "ansible/inventory", "-e", f"@{p.vault}", "--syntax-check",
+                 STACK / f"ansible/playbooks/{name}.yml"], env=env, stdout=subprocess.DEVNULL)
+        run(["ansible-playbook", "-i", STACK / "ansible/inventory", "-e", f"@{p.vault}", STACK / "test/resolve.yml"],
+            env=env)
+    print("\nhashistack: all checks passed")
+
+
+def step(what):
+    print(f"\n== {what}", flush=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="stack", description=__doc__)
+    commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("init", help="write stack.yaml, the CA and the encrypted vault from $DAMSTACK_ANSWERS")
+    commands.add_parser("bootstrap", help="create the ops user and close every other login")
+    commands.add_parser("provision", help="set up WireGuard, Consul, Vault, Nomad and the backups on the server")
+    commands.add_parser("plan", help="plan the OpenTofu resources and check the plan against the policies")
+    commands.add_parser("apply", help="apply the last plan, checked again")
+    out = commands.add_parser("output", help="print the OpenTofu outputs, or one of them")
+    out.add_argument("name", nargs="?")
+    commands.add_parser("check", help="prove the stack works, without a server")
+    args = parser.parse_args()
+
+    p = Project(PROJECT)
+    try:
+        match args.command:
+            case "init":
+                answers = os.environ.get("DAMSTACK_ANSWERS")
+                if not answers:
+                    die("DAMSTACK_ANSWERS does not name the answers file; damstack sets it")
+                init(p, json.loads(Path(answers).read_text()))
+            case "bootstrap":
+                playbook(p, "bootstrap")
+            case "provision":
+                playbook(p, "provision")
+                import_vault_init(p)
+            case "plan":
+                plan(p)
+            case "apply":
+                apply(p)
+            case "output":
+                output(p, args.name)
+            case "check":
+                check()
+    except subprocess.CalledProcessError as err:
+        die(f"{Path(str(err.cmd[0])).name} failed with exit code {err.returncode}")
+
+
+if __name__ == "__main__":
+    main()

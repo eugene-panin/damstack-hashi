@@ -1,0 +1,121 @@
+---
+stack_project: "{{ lookup('ansible.builtin.env', 'DAMSTACK_PROJECT') }}"
+stack: "{{ lookup('ansible.builtin.file', stack_project ~ '/stack.yaml') | from_yaml }}"
+_stack_prefix: "{{ (stack.network.cidr | split('/') | first).rsplit('.', 1) | first }}"
+_stack_ports:
+  80: HTTP
+  443: HTTPS
+  25: SMTP
+  465: SMTP submission, implicit TLS
+  587: SMTP submission, STARTTLS
+  993: IMAP, implicit TLS
+
+ansible_user: "{{ stack.server.ops_user }}"
+stack_ops_user: "{{ stack.server.ops_user }}"
+stack_bootstrap_user: "{{ stack.server.bootstrap_user | default('root') }}"
+ansible_become: true
+
+ansible_host: "{{ stack.server.address }}"
+stack_client_dir: "{{ stack_project }}/clients/"
+
+wireguard_interface: wg0
+wireguard_address: "{{ _stack_prefix }}.1/{{ stack.network.cidr | split('/') | last }}"
+wireguard_listen_port: 51820
+wireguard_manage_firewall: true
+wireguard_allow_mesh_traffic: true
+
+wireguard_client_dir: /etc/wireguard/clients
+wireguard_client_list: >-
+  {%- set clients = [] -%}
+  {%- for name in stack.network.clients -%}
+  {%- set _ = clients.append({'name': name, 'address': _stack_prefix ~ '.' ~ (loop.index + 1) ~ '/32'}) -%}
+  {%- endfor -%}
+  {{ clients }}
+wireguard_client_endpoint: "{{ ansible_host }}:{{ wireguard_listen_port }}"
+wireguard_client_routes: "{{ stack.network.cidr }}"
+wireguard_client_dns:
+  - "{{ stack_address }}"
+
+stack_public_interface: "{{ stack.server.public_interface }}"
+
+firewall_allow: >-
+  {%- set rules = [] -%}
+  {%- for port in stack.server.public_ports -%}
+  {%- set _ = rules.append({'port': port, 'interface': stack_public_interface, 'comment': _stack_ports[port] | default('Public port ' ~ port)}) -%}
+  {%- endfor -%}
+  {%- set _ = rules.append({'interface': 'nomad', 'comment': 'Nomad bridge, jobs reaching Consul, Vault and Nomad on the host'}) -%}
+  {{ rules }}
+
+stack_address: "{{ wireguard_address | split('/') | first }}"
+stack_ca_cert: "{{ lookup('ansible.builtin.file', stack_project ~ '/ca.pem') }}"
+stack_ca_key: "{{ vault_stack_ca_key }}"
+
+consul_version: 2.0.4
+consul_server: true
+consul_bootstrap_expect: 1
+consul_datacenter: "{{ stack.name }}"
+consul_bind_address: "{{ stack_address }}"
+consul_gossip_keys: >-
+  {{ [vault_consul_gossip_key]
+     + ([vault_consul_gossip_key_previous] if vault_consul_gossip_key_previous | default('') | length > 0 else []) }}
+consul_acl_bootstrap_token: "{{ vault_consul_acl_bootstrap_token }}"
+consul_acl_dns_token: "{{ vault_consul_acl_dns_token }}"
+consul_acl_agent_token: "{{ vault_consul_acl_agent_token }}"
+
+consul_dns_domains:
+  - consul
+consul_dns_listen_addresses:
+  - "{{ stack_address }}"
+consul_pki_ca_cert: "{{ stack_ca_cert }}"
+consul_pki_ca_key: "{{ stack_ca_key }}"
+
+vault_version: 2.1.1
+vault_bind_address: "{{ stack_address }}"
+vault_pki_ca_cert: "{{ stack_ca_cert }}"
+vault_pki_ca_key: "{{ stack_ca_key }}"
+vault_init_output_path: "{{ stack_project }}/.damstack/work/vault-init.json"
+
+nomad_version: 2.0.7
+nomad_region: global
+nomad_datacenter: "{{ stack.name }}"
+nomad_bind_address: "{{ stack_address }}"
+nomad_pki_ca_cert: "{{ stack_ca_cert }}"
+nomad_pki_ca_key: "{{ stack_ca_key }}"
+nomad_acl_bootstrap_token: "{{ vault_nomad_acl_bootstrap_token }}"
+nomad_gossip_keys:
+  - "{{ vault_nomad_gossip_key }}"
+nomad_cni: true
+nomad_network_interface: "{{ wireguard_interface }}"
+nomad_host_networks:
+  - public:
+      interface: "{{ stack_public_interface }}"
+nomad_consul_address: 127.0.0.1:8501
+nomad_consul_ca_cert: "{{ stack_ca_cert }}"
+nomad_consul_token: "{{ vault_nomad_consul_token }}"
+nomad_vault_address: "https://{{ stack_address }}:8200"
+nomad_vault_ca_cert: "{{ stack_ca_cert }}"
+
+backup_repository: "{{ stack.backup.server.path }}"
+backup_password: "{{ vault_backup_password }}"
+backup_compression: "{{ stack.backup.compression | default('auto') }}"
+backup_schedule: "*-*-* {{ stack.backup.schedule }}:00"
+backup_keep: "{{ stack.backup.server.keep }}"
+backup_paths:
+  - "{{ nomad_data_dir | default('/opt/nomad') }}/host_volumes"
+backup_hooks:
+  - name: consul
+    command: consul snapshot save "$BACKUP_HOOK_OUTPUT/consul.snap"
+  - name: nomad
+    command: nomad operator snapshot save "$BACKUP_HOOK_OUTPUT/nomad.snap"
+  - name: vault
+    command: vault token renew >/dev/null && vault operator raft snapshot save "$BACKUP_HOOK_OUTPUT/vault.snap"
+backup_hook_environment:
+  CONSUL_HTTP_ADDR: https://127.0.0.1:8501
+  CONSUL_CACERT: /etc/consul.d/tls/ca.pem
+  CONSUL_HTTP_TOKEN: "{{ vault_consul_acl_bootstrap_token }}"
+  NOMAD_ADDR: "https://{{ stack_address }}:4646"
+  NOMAD_CACERT: /etc/nomad.d/tls/ca.pem
+  NOMAD_TOKEN: "{{ vault_nomad_acl_bootstrap_token }}"
+  VAULT_ADDR: "https://{{ stack_address }}:8200"
+  VAULT_CACERT: /etc/vault.d/tls/ca.pem
+  VAULT_TOKEN: "{{ vault_backup_vault_token }}"
