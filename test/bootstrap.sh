@@ -45,6 +45,7 @@ target() {
     sleep 1
   done
   docker exec -i "$1-$run" sh -c 'cat > /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys' <"$work/key.pub"
+  docker exec "$1-$run" sh -c 'printf "PermitRootLogin yes\nPasswordAuthentication yes\n" > /etc/ssh/sshd_config.d/01-provider.conf'
 }
 
 on() { docker exec "$1-$run" "${@:2}"; }
@@ -75,13 +76,16 @@ bootstrap() {
 logs_in() { tool "$toolbox" ssh -F /dev/null -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
   -o BatchMode=yes -o ConnectTimeout=5 -i /work/key "$1@$2" "${@:3}" >/dev/null 2>&1; }
 
-step "a fresh server: ops is created, only its key logs in, root and passwords are off"
+step "a fresh server whose provider allows root and passwords: ops is created, only its key logs in, root and passwords are off"
 target fresh
+on fresh sh -c 'printf "PermitRootLogin no\n" > /etc/ssh/sshd_config.d/99-hardening.conf'
 project fresh fresh ops
 bootstrap fresh || { cat "$work/fresh.log"; fail "bootstrap of a fresh server"; }
 logs_in ops fresh sudo -n true || fail "ops does not log in or use sudo"
 logs_in root fresh true && fail "root still logs in"
 on fresh sshd -T | grep -qx 'passwordauthentication no' || fail "password logins are on"
+on fresh sshd -T | grep -qx 'permitrootlogin no' || fail "root logins are on"
+on fresh test ! -e /etc/ssh/sshd_config.d/99-hardening.conf || fail "the hardening of an earlier version was left"
 on fresh cat /etc/damstack/ops-user | grep -qx 'created: true' || fail "the marker does not say created"
 
 step "a second run changes nothing"
