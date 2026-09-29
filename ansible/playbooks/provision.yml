@@ -110,7 +110,7 @@
         url: "https://{{ stack_address }}:8200/v1/sys/policies/acl/backup"
         ca_path: /etc/vault.d/tls/ca.pem
         headers:
-          X-Vault-Token: "{{ vault_root_token }}"
+          X-Vault-Token: "{{ stack_vault_token }}"
         status_code: [200, 404]
       register: _stack_backup_policy
       check_mode: false
@@ -122,7 +122,7 @@
         ca_path: /etc/vault.d/tls/ca.pem
         method: PUT
         headers:
-          X-Vault-Token: "{{ vault_root_token }}"
+          X-Vault-Token: "{{ stack_vault_token }}"
         body_format: json
         body:
           policy: "{{ _stack_backup_policy_text }}"
@@ -142,7 +142,7 @@
         ca_path: /etc/vault.d/tls/ca.pem
         method: POST
         headers:
-          X-Vault-Token: "{{ vault_root_token }}"
+          X-Vault-Token: "{{ stack_vault_token }}"
         body_format: json
         body:
           token: "{{ vault_backup_vault_token }}"
@@ -157,7 +157,7 @@
         ca_path: /etc/vault.d/tls/ca.pem
         method: POST
         headers:
-          X-Vault-Token: "{{ vault_root_token }}"
+          X-Vault-Token: "{{ stack_vault_token }}"
         body_format: json
         body:
           id: "{{ vault_backup_vault_token }}"

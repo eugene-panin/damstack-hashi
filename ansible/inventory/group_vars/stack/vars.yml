@@ -74,6 +74,9 @@ vault_bind_address: "{{ stack_address }}"
 vault_pki_ca_cert: "{{ stack_ca_cert }}"
 vault_pki_ca_key: "{{ stack_ca_key }}"
 vault_init_output_path: "{{ stack_project }}/.damstack/work/vault-init.json"
+stack_vault_token: >-
+  {{ vault_root_token if vault_root_token is defined
+     else (lookup('ansible.builtin.file', vault_init_output_path) | from_json).root_token }}
 
 nomad_version: 2.0.7
 nomad_region: global
