@@ -40,7 +40,12 @@ stack_public_interface: "{{ stack.server.public_interface }}"
 
 firewall_allow: >-
   {%- set rules = [] -%}
-  {%- for port in stack.server.public_ports -%}
+  {%- set ports = [] -%}
+  {%- for port in stack.server.public_ports -%}{%- set _ = ports.append(port) -%}{%- endfor -%}
+  {%- for app in (stack.apps | default({}, true)).values() -%}
+  {%- for port in (app.public_ports | default([])) -%}{%- set _ = ports.append(port) -%}{%- endfor -%}
+  {%- endfor -%}
+  {%- for port in ports | unique -%}
   {%- set _ = rules.append({'port': port, 'interface': stack_public_interface, 'comment': _stack_ports[port] | default('Public port ' ~ port)}) -%}
   {%- endfor -%}
   {%- set _ = rules.append({'interface': 'nomad', 'comment': 'Nomad bridge, jobs reaching Consul, Vault and Nomad on the host'}) -%}
@@ -73,6 +78,7 @@ vault_version: 2.1.1
 vault_bind_address: "{{ stack_address }}"
 vault_pki_ca_cert: "{{ stack_ca_cert }}"
 vault_pki_ca_key: "{{ stack_ca_key }}"
+vault_auto_unseal: "{{ stack.vault.auto_unseal | default(true) | bool }}"
 vault_init_output_path: "{{ stack_project }}/.damstack/work/vault-init.json"
 stack_vault_token: >-
   {{ vault_root_token if vault_root_token is defined

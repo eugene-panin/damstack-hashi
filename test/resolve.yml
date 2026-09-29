@@ -27,6 +27,7 @@
           - backup_hook_environment.VAULT_TOKEN | length == 36
           - stack_ops_user == 'ops'
           - stack_bootstrap_user == stack.server.bootstrap_user
+          - vault_auto_unseal
         quiet: true
 
     - name: Assert stack.yaml says what test/answers.yaml answered
@@ -37,7 +38,21 @@
           - stack.dns.zones == ['infra.example.org', 'example.org']
           - stack.infra_domain == 'infra.example.org'
           - stack.acme_email == 'admin@example.org'
-          - stack.server.public_ports == [80, 443, 25, 465, 587, 993]
-          - stack.apps.mail.hostname == 'mail.example.org'
-          - stack.apps.mail.domains == ['example.org']
+          - stack.server.public_ports == [80, 443]
+          - stack.apps == {}
         quiet: true
+
+    - name: Assert the firewall opens the ports of the apps with those of the platform, once each
+      ansible.builtin.assert:
+        that:
+          - firewall_allow | map(attribute='port') | select('defined') | list == [80, 443, 25, 993]
+          - firewall_allow | selectattr('port', 'defined') | map(attribute='interface') | unique | list == ['eth0']
+        quiet: true
+      vars:
+        stack:
+          name: check
+          server: {address: 192.0.2.10, bootstrap_user: root, ops_user: ops, public_interface: eth0, public_ports: [80, 443]}
+          network: {cidr: 10.77.0.0/24, clients: [laptop]}
+          apps:
+            mail: {public_ports: [25, 443, 993]}
+            web: {}

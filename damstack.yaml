@@ -1,6 +1,19 @@
 apiVersion: damstack/v1
 name: hashi
-description: Consul, Vault and Nomad on one server, over WireGuard, with Traefik, backups and apps such as mail
+description: Consul, Vault and Nomad on one server, over WireGuard, with Traefik and backups, a platform for apps such as mail
+provides: [nomad, vault-kv, consul, ingress-traefik]
+app_env:
+  NOMAD_ADDR: 'https://{{ firstHost .config.network.cidr }}:4646'
+  NOMAD_CACERT: /work/ca.pem
+  NOMAD_TOKEN: '{{ secret "vault_nomad_acl_bootstrap_token" }}'
+  CONSUL_HTTP_ADDR: 'https://{{ firstHost .config.network.cidr }}:8501'
+  CONSUL_CACERT: /work/ca.pem
+  CONSUL_HTTP_TOKEN: '{{ secret "vault_consul_acl_bootstrap_token" }}'
+  VAULT_ADDR: 'https://{{ firstHost .config.network.cidr }}:8200'
+  VAULT_CACERT: /work/ca.pem
+  VAULT_TOKEN: '{{ secret "vault_root_token" }}'
+  TF_VAR_vault_kv_path: secret
+  TF_VAR_state_passphrase: '{{ secret "vault_tofu_state_passphrase" }}'
 requires:
   damstack: ">=0.1.0"
   toolbox: ">=1.0.0, <2.0.0"
@@ -36,19 +49,6 @@ questions:
     type: list
     default: [laptop]
     pattern: "^[a-z][a-z0-9-]{0,30}$"
-  - name: mail
-    prompt: Should the server handle mail for your domains?
-    type: bool
-    default: false
-  - name: mail_hostname
-    prompt: The name of the mail server, such as mail.example.com
-    pattern: "^[a-z0-9-]+(\\.[a-z0-9-]+)+$"
-    when: mail
-  - name: mail_domains
-    prompt: The domains to receive mail for
-    type: list
-    pattern: "^[a-z0-9-]+(\\.[a-z0-9-]+)+$"
-    when: mail
 
 secrets:
   - name: vault_stack_ca_key
@@ -111,6 +111,7 @@ steps:
       dir: infra
       action: apply
       policy: &policy {dir: policy, nomad_jobs: true}
+      outputs: {dns_records: dns/hashi.json}
     tunnel: true
     env: &tofu
       TF_VAR_state_passphrase: '{{ secret "vault_tofu_state_passphrase" }}'
@@ -126,6 +127,16 @@ steps:
       VAULT_CACERT: /work/ca.pem
       VAULT_TOKEN: '{{ secret "vault_root_token" }}'
     confirm: true
+  - name: dns
+    tofu:
+      dir: dns
+      action: apply
+      policy: {dir: policy}
+    env: &dns
+      TF_VAR_state_passphrase: '{{ secret "vault_tofu_state_passphrase" }}'
+      CLOUDFLARE_API_TOKEN: '{{ secret "vault_cloudflare_api_token" }}'
+    after_apps: true
+    confirm: true
 
 commands:
   plan:
@@ -135,6 +146,9 @@ commands:
   output:
     tofu: {dir: infra, action: output}
     env: *tofu
+  dns-records:
+    tofu: {dir: dns, action: output}
+    env: *dns
   provision:
     ansible:
       <<: *ansible

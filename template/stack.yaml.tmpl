@@ -17,8 +17,9 @@ server:
   adopt_user: false
   # Network interface of the server to the internet.
   public_interface: {{ yaml .public_interface }}
-  # Ports open to the internet: 80 and 443 for Traefik{{ if .mail }}, 25, 465, 587 and 993 for mail{{ end }}.
-  public_ports: [80, 443{{ if .mail }}, 25, 465, 587, 993{{ end }}]
+  # Ports open to the internet: 80 and 443 for Traefik. An app opens its own, under
+  # apps.<app>.public_ports.
+  public_ports: [80, 443]
 
 # Private network over WireGuard. The server takes the first address of this /24,
 # each client the next ones, in order.
@@ -31,12 +32,18 @@ infra_domain: {{ yaml .infra_domain }}
 # Contact of the Let's Encrypt account of Traefik.
 acme_email: {{ yaml .acme_email }}
 
-# Where DNS records go. With cloudflare, records of every domain in zones, or under one of
-# them, go in through the Cloudflare API; records of other domains are printed by
-# damstack output manual_records, to be created by hand.
+# Where DNS records go, the platform's and the apps'. With cloudflare, records of every domain
+# in zones, or under one of them, go in through the Cloudflare API; records of other domains
+# are printed by damstack dns-records, to be created by hand.
 dns:
   provider: cloudflare
   zones: {{ yaml .dns_zones }}
+
+# Vault seals itself every time it starts. true keeps its unseal keys on the server, readable
+# by root only, so it unseals itself after a reboot; false leaves it sealed, and the platform
+# down, until the next damstack deploy, with the keys only in vault.yml.
+vault:
+  auto_unseal: true
 
 # Backups, made with restic: on the server every night, and on your laptop when damstack
 # pulls them. restic compresses, deduplicates and encrypts them with vault_backup_password.
@@ -51,14 +58,6 @@ backup:
     keep: {daily: 30, weekly: 12, monthly: 24}
     pull_every: 1h
 
-# Apps on the platform, each a module of its own. Deleting the block of an app removes the
-# app; the policies refuse the plan while it would destroy the app's data.
-{{- if .mail }}
-apps:
-  mail:
-    hostname: {{ yaml .mail_hostname }}
-    domains: {{ yaml .mail_domains }}
-    acme_email: {{ yaml .acme_email }}
-{{- else }}
+# Apps on the platform, each added with damstack app add <app>, under its name. Their DNS
+# records go where dns says, with those of the platform.
 apps: {}
-{{- end }}
