@@ -40,10 +40,20 @@ questions:
   - name: acme_email
     prompt: Your email, for Let's Encrypt to write to about the certificates
     pattern: "^[^@\\s]+@[^@\\s]+$"
+  - name: dns_provider
+    prompt: Where the DNS records of your domains are
+    type: enum
+    options: [cloudflare, other]
+    default: cloudflare
   - name: dns_zones
     prompt: The domains on Cloudflare OpenTofu may publish records in, the one of the admin pages among them
     type: list
     pattern: "^[a-z0-9-]+(\\.[a-z0-9-]+)+$"
+    when: dns_provider=cloudflare
+  - name: acme_dns_provider
+    prompt: The DNS provider of the admin domain, by its name in https://go-acme.github.io/lego/dns/, such as hetzner or ovh
+    pattern: "^[a-z0-9][a-z0-9.-]*$"
+    when: dns_provider=other
   - name: wireguard_clients
     prompt: The devices that may open the admin pages, such as laptop and phone
     type: list
@@ -76,8 +86,15 @@ secrets:
     generate: uuid
   - name: vault_cloudflare_api_token
     ask: A Cloudflare token with Zone DNS Edit and Zone Read on those domains
+    when: dns_provider=cloudflare
   - name: vault_cloudflare_traefik_token
     ask: A Cloudflare token with Zone DNS Edit and Zone Read on the admin domain only, for its certificate
+    when: dns_provider=cloudflare
+  - name: vault_acme_dns_env
+    ask: >-
+      The credentials of that provider for the certificate of the admin pages, as NAME=value pairs
+      separated by spaces, with the names its page in https://go-acme.github.io/lego/dns/ gives
+    when: dns_provider=other
 
 config: template/stack.yaml.tmpl
 
@@ -116,6 +133,7 @@ steps:
     env: &tofu
       TF_VAR_state_passphrase: '{{ secret "vault_tofu_state_passphrase" }}'
       TF_VAR_traefik_cloudflare_token: '{{ secret "vault_cloudflare_traefik_token" }}'
+      TF_VAR_acme_dns_env: '{{ secret "vault_acme_dns_env" }}'
       CLOUDFLARE_API_TOKEN: '{{ secret "vault_cloudflare_api_token" }}'
       CONSUL_HTTP_ADDR: 'https://{{ firstHost .config.network.cidr }}:8501'
       CONSUL_CACERT: /work/ca.pem

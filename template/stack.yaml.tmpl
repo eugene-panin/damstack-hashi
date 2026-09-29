@@ -33,11 +33,23 @@ infra_domain: {{ yaml .infra_domain }}
 acme_email: {{ yaml .acme_email }}
 
 # Where DNS records go, the platform's and the apps'. With cloudflare, records of every domain
-# in zones, or under one of them, go in through the Cloudflare API; records of other domains
-# are printed by damstack dns-records, to be created by hand.
+# in zones, or under one of them, go in through the Cloudflare API; with manual, and for
+# domains in no zone, damstack dns-records prints them, to be created by hand.
 dns:
+{{- if eq .dns_provider "cloudflare" }}
   provider: cloudflare
   zones: {{ yaml .dns_zones }}
+{{- else }}
+  provider: manual
+  zones: []
+{{- end }}
+
+# Let's Encrypt checks the admin domain is yours with a DNS-01 challenge through the API of
+# its DNS provider, named as in https://go-acme.github.io/lego/dns/. With cloudflare the
+# token is vault_cloudflare_traefik_token; with another, the NAME=value pairs in
+# vault_acme_dns_env.
+certificates:
+  dns_provider: {{ if eq .dns_provider "cloudflare" }}cloudflare{{ else }}{{ yaml .acme_dns_provider }}{{ end }}
 
 # Vault seals itself every time it starts. true keeps its unseal keys on the server, readable
 # by root only, so it unseals itself after a reboot; false leaves it sealed, and the platform

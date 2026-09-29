@@ -4,6 +4,7 @@ ops_user: ops
 public_interface: eth0
 infra_domain: infra.example.org
 acme_email: admin@example.org
+dns_provider: cloudflare
 dns_zones: [infra.example.org, example.org]
 wireguard_clients: [laptop, phone]
 vault_cloudflare_api_token: test-cloudflare-api-token
