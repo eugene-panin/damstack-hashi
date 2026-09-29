@@ -22,13 +22,13 @@ questions:
     prompt: The server's network interface to the internet (ip -brief address on the server shows it)
     default: eth0
   - name: infra_domain
-    prompt: A whole domain on Cloudflare for the admin pages, such as example-admin.com
+    prompt: A domain on Cloudflare, or a name under one, for the admin pages, such as admin.example.com
     pattern: "^[a-z0-9-]+(\\.[a-z0-9-]+)+$"
   - name: acme_email
     prompt: Your email, for Let's Encrypt to write to about the certificates
     pattern: "^[^@\\s]+@[^@\\s]+$"
   - name: dns_zones
-    prompt: The Cloudflare domains OpenTofu may publish records in, the admin domain among them
+    prompt: The domains on Cloudflare OpenTofu may publish records in, the one of the admin pages among them
     type: list
     pattern: "^[a-z0-9-]+(\\.[a-z0-9-]+)+$"
   - name: wireguard_clients
@@ -86,6 +86,9 @@ server:
   first_user: "{{ .config.server.bootstrap_user }}"
   ops_user: "{{ .config.server.ops_user }}"
   tunnel: "{{ firstHost .config.network.cidr }}"
+  tunnel_help: >-
+    Import clients/{{ index .config.network.clients 0 }}.conf of the project into the WireGuard app,
+    or wg-quick up it, and turn the tunnel on.
 
 steps:
   - name: bootstrap
@@ -108,6 +111,7 @@ steps:
       dir: infra
       action: apply
       policy: &policy {dir: policy, nomad_jobs: true}
+    tunnel: true
     env: &tofu
       TF_VAR_state_passphrase: '{{ secret "vault_tofu_state_passphrase" }}'
       TF_VAR_traefik_cloudflare_token: '{{ secret "vault_cloudflare_traefik_token" }}'
@@ -126,6 +130,7 @@ steps:
 commands:
   plan:
     tofu: {dir: infra, action: plan, policy: *policy}
+    tunnel: true
     env: *tofu
   output:
     tofu: {dir: infra, action: output}

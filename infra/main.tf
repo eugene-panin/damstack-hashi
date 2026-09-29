@@ -5,7 +5,7 @@ locals {
 
 module "stack" {
   source  = "eugene-panin/hashistack/nomad"
-  version = "~> 0.6"
+  version = "~> 0.8"
 
   infra_domain             = local.stack.infra_domain
   address                  = cidrhost(local.stack.network.cidr, 1)
@@ -29,11 +29,11 @@ module "mail" {
 
 module "dns" {
   source  = "eugene-panin/hashistack/nomad//modules/dns-cloudflare"
-  version = "~> 0.6"
+  version = "~> 0.8"
   count   = local.stack.dns.provider == "cloudflare" ? 1 : 0
 
   records = local.records
-  domains = [for z in local.stack.dns.zones : z if anytrue([for set in local.records : contains(keys(set), z)])]
+  zones   = local.stack.dns.zones
 }
 
 locals {
