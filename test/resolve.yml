@@ -1,8 +1,10 @@
 ---
 - name: Check that every variable the roles read resolves from the project
   hosts: stack
-  gather_facts: false
+  gather_facts: true
   connection: local
+  vars:
+    ansible_become: false
   tasks:
     - name: Assert the generated secrets and the stack settings
       ansible.builtin.assert:
@@ -19,7 +21,10 @@
           - "'BEGIN PRIVATE KEY' in consul_pki_ca_key"
           - "'BEGIN CERTIFICATE' in consul_pki_ca_cert"
           - consul_pki_ca_cert == nomad_pki_ca_cert
-          - nomad_host_networks[0].public.interface == stack.server.public_interface
+          - stack.server.public_interface == 'auto'
+          - nomad_host_networks[0].public.interface == ansible_facts.default_ipv4.interface
+          - stack.network.cidr is match('^10\\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\\.[0-9]+\\.0/24$')
+          - stack.network.cidr != '10.77.0.0/24'
           - wireguard_client_list | map(attribute='name') | list == stack.network.clients
           - firewall_allow | selectattr('interface', 'equalto', 'nomad') | list | length == 1
           - firewall_allow | map(attribute='port') | select('defined') | list == stack.server.public_ports

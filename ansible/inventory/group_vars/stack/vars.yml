@@ -36,7 +36,9 @@ wireguard_client_routes: "{{ stack.network.cidr }}"
 wireguard_client_dns:
   - "{{ stack_address }}"
 
-stack_public_interface: "{{ stack.server.public_interface }}"
+stack_public_interface: >-
+  {{ ansible_facts.default_ipv4.interface if stack.server.public_interface | default('auto') == 'auto'
+     else stack.server.public_interface }}
 
 firewall_allow: >-
   {%- set rules = [] -%}

@@ -15,8 +15,8 @@ server:
   # A user of that name that damstack did not create is left alone, unless this says to take
   # it over: then your key is added to it, and its other keys stay.
   adopt_user: false
-  # Network interface of the server to the internet.
-  public_interface: {{ yaml .public_interface }}
+  # Network interface of the server to the internet; auto takes the one of its default route.
+  public_interface: auto
   # Ports open to the internet: 80 and 443 for Traefik. An app opens its own, under
   # apps.<app>.public_ports.
   public_ports: [80, 443]
@@ -24,7 +24,8 @@ server:
 # Private network over WireGuard. The server takes the first address of this /24,
 # each client the next ones, in order.
 network:
-  cidr: 10.77.0.0/24
+  # Chosen once, free among your projects: a set up server keeps it.
+  cidr: {{ .network_cidr }}
   clients: {{ yaml .wireguard_clients }}
 
 # Admin pages: consul., nomad. and vault.<infra_domain>, through the private network only.

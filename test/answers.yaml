@@ -1,7 +1,6 @@
 server_address: 192.0.2.10
 bootstrap_user: root
 ops_user: ops
-public_interface: eth0
 infra_domain: infra.example.org
 acme_email: admin@example.org
 dns_provider: cloudflare

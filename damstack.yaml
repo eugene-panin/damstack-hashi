@@ -27,13 +27,17 @@ questions:
     prompt: The user you log in to the server with today
     default: root
     pattern: "^[a-z_][a-z0-9_-]{0,31}$"
+    advanced: true
   - name: ops_user
     prompt: The user you will log in to the server with from now on
     default: ops
     pattern: "^[a-z_][a-z0-9_-]{0,31}$"
-  - name: public_interface
-    prompt: The server's network interface to the internet (ip -brief address on the server shows it)
-    default: eth0
+    advanced: true
+  - name: network_cidr
+    prompt: The private network of the project, a /24 no other project on your devices uses
+    default: "{{ freeSubnet }}"
+    pattern: "^10\\.[0-9]{1,3}\\.[0-9]{1,3}\\.0/24$"
+    advanced: true
   - name: infra_domain
     prompt: A domain on Cloudflare, or a name under one, for the admin pages, such as admin.example.com
     pattern: "^[a-z0-9-]+(\\.[a-z0-9-]+)+$"
