@@ -138,12 +138,16 @@ server:
 
 steps:
   - name: bootstrap
+    title: Securing the server
+    takes: 1 min
     ansible: &ansible
       playbook: ansible/playbooks/bootstrap.yml
       inventory: ansible/inventory
       requirements: ansible/requirements.yml
     once: true
   - name: provision
+    title: Consul, Vault, Nomad and WireGuard
+    takes: 6 min
     ansible:
       <<: *ansible
       playbook: ansible/playbooks/provision.yml
@@ -153,6 +157,8 @@ steps:
         vault_unseal_keys: keys_base64
         vault_root_token: root_token
   - name: apply
+    title: Traefik and the admin pages
+    takes: 1 min
     tofu:
       dir: infra
       action: apply
@@ -175,6 +181,8 @@ steps:
       VAULT_TOKEN: '{{ secret "vault_root_token" }}'
     confirm: true
   - name: dns
+    title: DNS records
+    takes: 10 s
     tofu:
       dir: dns
       action: apply
