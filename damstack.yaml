@@ -15,6 +15,15 @@ summary:
     value: '{{ join ", " .wireguard_clients }}'
   - label: network
     value: "{{ .network_cidr }}, through WireGuard"
+done:
+  - "https://nomad.{{ .config.infra_domain }}    token: damstack token nomad"
+  - "https://vault.{{ .config.infra_domain }}    token: damstack token vault"
+  - "https://consul.{{ .config.infra_domain }}   token: damstack token consul"
+  - "They open through WireGuard. Next, an app such as mail: damstack app add mail"
+tokens:
+  nomad: vault_nomad_acl_bootstrap_token
+  consul: vault_consul_acl_bootstrap_token
+  vault: vault_root_token
 provides: [nomad, vault-kv, consul, ingress-traefik]
 app_env:
   NOMAD_ADDR: 'https://{{ firstHost .config.network.cidr }}:4646'
@@ -132,6 +141,7 @@ server:
   first_user: "{{ .config.server.bootstrap_user }}"
   ops_user: "{{ .config.server.ops_user }}"
   tunnel: "{{ firstHost .config.network.cidr }}"
+  tunnel_configs: "clients/*.conf"
   tunnel_help: >-
     Import clients/{{ index .config.network.clients 0 }}.conf of the project into the WireGuard app,
     or wg-quick up it, and turn the tunnel on.
