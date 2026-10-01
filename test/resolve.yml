@@ -32,6 +32,7 @@
           - backup_hook_environment.VAULT_TOKEN | length == 36
           - stack_ops_user == 'ops'
           - stack_bootstrap_user == stack.server.bootstrap_user
+          - consul_node_name == 'server' and nomad_node_name == 'server' and vault_node_id == 'server'
           - vault_auto_unseal
         quiet: true
 
@@ -61,3 +62,16 @@
           apps:
             mail: {public_ports: [25, 443, 993]}
             web: {}
+
+    - name: Assert the node keeps the name stack.yaml gives it in Consul, Nomad and Vault
+      ansible.builtin.assert:
+        that:
+          - consul_node_name == 'ovh-vps'
+          - nomad_node_name == 'ovh-vps'
+          - vault_node_id == 'ovh-vps'
+        quiet: true
+      vars:
+        stack:
+          name: check
+          server: {address: 192.0.2.10, bootstrap_user: root, ops_user: ops, node_name: ovh-vps, public_interface: eth0, public_ports: [80, 443]}
+          network: {cidr: 10.77.0.0/24, clients: [laptop]}

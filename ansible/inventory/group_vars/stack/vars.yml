@@ -16,6 +16,10 @@ stack_bootstrap_user: "{{ stack.server.bootstrap_user | default('root') }}"
 ansible_become: true
 
 ansible_host: "{{ stack.server.address }}"
+stack_node_name: "{{ stack.server.node_name | default(inventory_hostname) }}"
+consul_node_name: "{{ stack_node_name }}"
+nomad_node_name: "{{ stack_node_name }}"
+vault_node_id: "{{ stack_node_name }}"
 stack_client_dir: "{{ stack_project }}/clients/"
 
 wireguard_interface: wg0

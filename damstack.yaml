@@ -19,7 +19,8 @@ done:
   - "https://nomad.{{ .config.infra_domain }}    token: damstack token nomad"
   - "https://vault.{{ .config.infra_domain }}    token: damstack token vault"
   - "https://consul.{{ .config.infra_domain }}   token: damstack token consul"
-  - "They open through WireGuard. Next, an app such as mail: damstack app add mail"
+  - "They open through WireGuard."
+  - "{{ if not .config.apps }}Next, an app such as mail: damstack app add mail{{ end }}"
 tokens:
   nomad: vault_nomad_acl_bootstrap_token
   consul: vault_consul_acl_bootstrap_token
@@ -211,6 +212,9 @@ commands:
   output:
     tofu: {dir: infra, action: output}
     env: *tofu
+  dns-plan:
+    tofu: {dir: dns, action: plan, policy: {dir: policy}}
+    env: *dns
   dns-records:
     tofu: {dir: dns, action: output}
     env: *dns

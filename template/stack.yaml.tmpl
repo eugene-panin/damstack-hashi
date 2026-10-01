@@ -15,6 +15,9 @@ server:
   # A user of that name that damstack did not create is left alone, unless this says to take
   # it over: then your key is added to it, and its other keys stay.
   adopt_user: false
+  # Name of the server in Consul, Nomad and Vault. Chosen once: renaming a running node
+  # breaks the Vault raft and leaves Nomad's jobs on the old node.
+  node_name: server
   # Network interface of the server to the internet; auto takes the one of its default route.
   public_interface: auto
   # Ports open to the internet: 80 and 443 for Traefik. An app opens its own, under
