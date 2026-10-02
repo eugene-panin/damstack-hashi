@@ -37,8 +37,7 @@ wireguard_client_list: >-
   {{ clients }}
 wireguard_client_endpoint: "{{ ansible_host }}:{{ wireguard_listen_port }}"
 wireguard_client_routes: "{{ stack.network.cidr }}"
-wireguard_client_dns:
-  - "{{ stack_address }}"
+wireguard_client_dns: []
 
 stack_public_interface: >-
   {{ ansible_facts.default_ipv4.interface if stack.server.public_interface | default('auto') == 'auto'

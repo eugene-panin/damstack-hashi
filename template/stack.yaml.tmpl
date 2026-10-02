@@ -62,7 +62,9 @@ vault:
   auto_unseal: true
 
 # Backups, made with restic: on the server every night, and on your laptop when damstack
-# pulls them. restic compresses, deduplicates and encrypts them with vault_backup_password.
+# pulls them, every pull_every while the laptop is on (off: only damstack backup pull).
+# restic compresses, deduplicates and encrypts them with vault_backup_password; damstack
+# backup status shows what is on the laptop.
 backup:
   schedule: "03:00"
   compression: auto

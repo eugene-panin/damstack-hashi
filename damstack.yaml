@@ -39,7 +39,7 @@ app_env:
   TF_VAR_vault_kv_path: secret
   TF_VAR_state_passphrase: '{{ secret "vault_tofu_state_passphrase" }}'
 requires:
-  damstack: ">=0.1.0"
+  damstack: ">=0.1.5"
   toolbox: ">=1.0.0, <2.0.0"
   host: [docker, ssh-key, wireguard]
 
@@ -146,6 +146,16 @@ server:
   tunnel_help: >-
     Import clients/{{ index .config.network.clients 0 }}.conf of the project into the WireGuard app,
     or wg-quick up it, and turn the tunnel on.
+
+backup:
+  from: "{{ .config.backup.server.path }}"
+  to: "{{ .config.backup.laptop.path }}"
+  password: '{{ secret "vault_backup_password" }}'
+  keep:
+    daily: "{{ .config.backup.laptop.keep.daily }}"
+    weekly: "{{ .config.backup.laptop.keep.weekly }}"
+    monthly: "{{ .config.backup.laptop.keep.monthly }}"
+  every: "{{ .config.backup.laptop.pull_every }}"
 
 steps:
   - name: bootstrap
