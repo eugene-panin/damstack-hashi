@@ -1,4 +1,4 @@
-apiVersion: damstack/v1
+apiVersion: damstack/v2
 name: hashi
 description: Consul, Vault and Nomad on one server, over WireGuard, with Traefik and backups, a platform for apps such as mail
 needs:
@@ -28,20 +28,20 @@ tokens:
 provides: [nomad, vault-kv, consul, ingress-traefik]
 app_env:
   NOMAD_ADDR: 'https://{{ firstHost .config.network.cidr }}:4646'
-  NOMAD_CACERT: /work/ca.pem
+  NOMAD_CACERT: '{{ .dir.project }}/ca.pem'
   NOMAD_TOKEN: '{{ secret "vault_nomad_acl_bootstrap_token" }}'
   CONSUL_HTTP_ADDR: 'https://{{ firstHost .config.network.cidr }}:8501'
-  CONSUL_CACERT: /work/ca.pem
+  CONSUL_CACERT: '{{ .dir.project }}/ca.pem'
   CONSUL_HTTP_TOKEN: '{{ secret "vault_consul_acl_bootstrap_token" }}'
   VAULT_ADDR: 'https://{{ firstHost .config.network.cidr }}:8200'
-  VAULT_CACERT: /work/ca.pem
+  VAULT_CACERT: '{{ .dir.project }}/ca.pem'
   VAULT_TOKEN: '{{ secret "vault_root_token" }}'
   TF_VAR_vault_kv_path: secret
   TF_VAR_state_passphrase: '{{ secret "vault_tofu_state_passphrase" }}'
 requires:
-  damstack: ">=0.1.5"
-  toolbox: ">=1.0.0, <2.0.0"
-  host: [docker, ssh-key, wireguard]
+  damstack: ">=0.2.0"
+  toolbox: ">=1.1.0, <2.0.0"
+  host: [ssh-key, wireguard]
 
 questions:
   - name: server_address
@@ -192,13 +192,13 @@ steps:
       TF_VAR_acme_dns_env: '{{ secret "vault_acme_dns_env" }}'
       CLOUDFLARE_API_TOKEN: '{{ secret "vault_cloudflare_api_token" }}'
       CONSUL_HTTP_ADDR: 'https://{{ firstHost .config.network.cidr }}:8501'
-      CONSUL_CACERT: /work/ca.pem
+      CONSUL_CACERT: '{{ .dir.project }}/ca.pem'
       CONSUL_HTTP_TOKEN: '{{ secret "vault_consul_acl_bootstrap_token" }}'
       NOMAD_ADDR: 'https://{{ firstHost .config.network.cidr }}:4646'
-      NOMAD_CACERT: /work/ca.pem
+      NOMAD_CACERT: '{{ .dir.project }}/ca.pem'
       NOMAD_TOKEN: '{{ secret "vault_nomad_acl_bootstrap_token" }}'
       VAULT_ADDR: 'https://{{ firstHost .config.network.cidr }}:8200'
-      VAULT_CACERT: /work/ca.pem
+      VAULT_CACERT: '{{ .dir.project }}/ca.pem'
       VAULT_TOKEN: '{{ secret "vault_root_token" }}'
     confirm: true
   - name: dns
