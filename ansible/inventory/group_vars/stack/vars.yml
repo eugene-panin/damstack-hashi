@@ -115,7 +115,7 @@ backup_compression: "{{ stack.backup.compression | default('auto') }}"
 backup_schedule: "*-*-* {{ stack.backup.schedule }}:00"
 backup_keep: "{{ stack.backup.server.keep }}"
 backup_paths:
-  - "{{ nomad_data_dir | default('/opt/nomad') }}/host_volumes"
+  - /var/backups/volumes
 backup_hooks:
   - name: consul
     command: consul snapshot save "$BACKUP_HOOK_OUTPUT/consul.snap"
@@ -123,6 +123,8 @@ backup_hooks:
     command: nomad operator snapshot save "$BACKUP_HOOK_OUTPUT/nomad.snap"
   - name: vault
     command: vault token renew >/dev/null && vault operator raft snapshot save "$BACKUP_HOOK_OUTPUT/vault.snap"
+  - name: volumes
+    command: /usr/local/sbin/damstack-backup-volumes /var/backups/volumes
 backup_hook_environment:
   CONSUL_HTTP_ADDR: https://127.0.0.1:8501
   CONSUL_CACERT: /etc/consul.d/tls/ca.pem

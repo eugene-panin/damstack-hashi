@@ -169,6 +169,14 @@
       changed_when: true
       no_log: true
 
-    - name: Back up the host volumes and the snapshots of Consul, Nomad and Vault
+    - name: Install the hook that copies the host volumes, stopping the jobs that ask for it
+      ansible.builtin.copy:
+        src: backup-volumes
+        dest: /usr/local/sbin/damstack-backup-volumes
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Back up the copies of the host volumes and the snapshots of Consul, Nomad and Vault
       ansible.builtin.include_role:
         name: eugene_panin.base.backup

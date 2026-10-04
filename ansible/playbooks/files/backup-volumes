@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""Copy every Nomad host volume to DEST/<namespace>-<name> for restic.
+
+A job with the meta backup = "stop" is stopped while its volumes are copied
+and started again: a store such as RocksDB cannot be copied while it runs.
+The other volumes are copied as they are. The copies keep the names of the
+volumes, which a new server gives the volumes again, unlike their IDs.
+"""
+
+import json
+import os
+import shutil
+import ssl
+import subprocess
+import sys
+import time
+import urllib.parse
+import urllib.request
+
+STOP_TIMEOUT = 120
+
+
+def api(path, **query):
+    url = os.environ["NOMAD_ADDR"].rstrip("/") + path
+    if query:
+        url += "?" + urllib.parse.urlencode(query)
+    req = urllib.request.Request(url, headers={"X-Nomad-Token": os.environ.get("NOMAD_TOKEN", "")})
+    ctx = ssl.create_default_context(cafile=os.environ.get("NOMAD_CACERT"))
+    with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
+        return json.load(resp)
+
+
+def nomad(*args):
+    subprocess.run(["nomad", *args], check=True, stdout=subprocess.DEVNULL)
+
+
+def volumes():
+    found = {}
+    for stub in api("/v1/volumes", type="host", namespace="*"):
+        vol = api("/v1/volume/host/" + stub["ID"], namespace=stub["Namespace"])
+        if vol.get("HostPath"):
+            found[(vol["Namespace"], vol["Name"])] = vol["HostPath"]
+    return found
+
+
+def stopped_for_backup():
+    jobs = []
+    for stub in api("/v1/jobs", namespace="*"):
+        if stub.get("Status") != "running" or stub.get("Stop"):
+            continue
+        job = api("/v1/job/" + urllib.parse.quote(stub["ID"]), namespace=stub["Namespace"])
+        if (job.get("Meta") or {}).get("backup") != "stop":
+            continue
+        names = {v["Source"] for g in job.get("TaskGroups") or [] for v in (g.get("Volumes") or {}).values() if v.get("Type") == "host"}
+        jobs.append((job["Namespace"], job["ID"], names))
+    return jobs
+
+
+def wait_stopped(namespace, job):
+    deadline = time.monotonic() + STOP_TIMEOUT
+    while time.monotonic() < deadline:
+        allocs = api("/v1/job/" + urllib.parse.quote(job) + "/allocations", namespace=namespace)
+        if all(a["ClientStatus"] not in ("pending", "running") for a in allocs):
+            return True
+        time.sleep(1)
+    return False
+
+
+def copy(src, dest):
+    os.makedirs(dest, mode=0o700, exist_ok=True)
+    subprocess.run(["rsync", "-a", "--delete", "--numeric-ids", src.rstrip("/") + "/", dest + "/"], check=True)
+
+
+def main():
+    dest = os.path.realpath(sys.argv[1])
+    if dest in ("/", "/var", "/var/backups") or not os.path.isabs(sys.argv[1]):
+        sys.exit(f"{sys.argv[1]} is not a directory of its own for the copies")
+    os.makedirs(dest, mode=0o700, exist_ok=True)
+    vols = volumes()
+    target = {key: os.path.join(dest, f"{key[0]}-{key[1]}") for key in vols}
+    done = set()
+    warnings = 0
+
+    for namespace, job, names in stopped_for_backup():
+        keys = [(namespace, n) for n in sorted(names) if (namespace, n) in vols]
+        if not keys:
+            continue
+        print(f"stopping {namespace}/{job} to copy {', '.join(n for _, n in keys)}", flush=True)
+        start = time.monotonic()
+        nomad("job", "stop", "-namespace", namespace, "-detach", job)
+        try:
+            if not wait_stopped(namespace, job):
+                print(f"WARNING: {namespace}/{job} did not stop in {STOP_TIMEOUT}s; its volumes are copied while it runs", flush=True)
+                warnings += 1
+            for key in keys:
+                copy(vols[key], target[key])
+                done.add(key)
+        finally:
+            nomad("job", "start", "-namespace", namespace, "-detach", job)
+            print(f"started {namespace}/{job} again after {time.monotonic() - start:.0f}s", flush=True)
+
+    for key in sorted(set(vols) - done):
+        copy(vols[key], target[key])
+
+    keep = {os.path.basename(p) for p in target.values()}
+    for name in os.listdir(dest):
+        if name not in keep:
+            shutil.rmtree(os.path.join(dest, name))
+    print(f"copied {len(vols)} volume(s) to {dest}" + (f", {warnings} warning(s)" if warnings else ""), flush=True)
+
+
+if __name__ == "__main__":
+    main()
