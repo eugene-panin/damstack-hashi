@@ -26,6 +26,10 @@
           - stack.network.cidr is match('^10\\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\\.[0-9]+\\.0/24$')
           - stack.network.cidr != '10.77.0.0/24'
           - wireguard_client_list | map(attribute='name') | list == stack.network.clients
+          - wireguard_client_list | map(attribute='public_key') | select('match', '^[A-Za-z0-9+/]{43}=$') | list | length == 2
+          - wireguard_client_list | map(attribute='preshared_key') | select('match', '^[A-Za-z0-9+/]{43}=$') | list | length == 2
+          - wireguard_client_list | map(attribute='address') | list == [_stack_prefix ~ '.2/32', _stack_prefix ~ '.3/32']
+          - wireguard_private_key is match('^[A-Za-z0-9+/]{43}=$')
           - firewall_allow | selectattr('interface', 'equalto', 'nomad') | list | length == 1
           - firewall_allow | map(attribute='port') | select('defined') | list == stack.server.public_ports
           - backup_password | length > 20

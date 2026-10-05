@@ -20,7 +20,6 @@ stack_node_name: "{{ stack.server.node_name | default(inventory_hostname) }}"
 consul_node_name: "{{ stack_node_name }}"
 nomad_node_name: "{{ stack_node_name }}"
 vault_node_id: "{{ stack_node_name }}"
-stack_client_dir: "{{ stack_project }}/clients/"
 
 wireguard_interface: wg0
 wireguard_address: "{{ _stack_prefix }}.1/{{ stack.network.cidr | split('/') | last }}"
@@ -28,16 +27,18 @@ wireguard_listen_port: 51820
 wireguard_manage_firewall: true
 wireguard_allow_mesh_traffic: true
 
+# The keys of the server and of the devices are made by damstack on the laptop and
+# kept in vault.yml; the server gets the public keys and preshared keys only.
+wireguard_private_key: "{{ vault_wireguard.server.private_key }}"
 wireguard_client_dir: /etc/wireguard/clients
 wireguard_client_list: >-
   {%- set clients = [] -%}
   {%- for name in stack.network.clients -%}
-  {%- set _ = clients.append({'name': name, 'address': _stack_prefix ~ '.' ~ (loop.index + 1) ~ '/32'}) -%}
+  {%- set d = vault_wireguard.devices[name] -%}
+  {%- set _ = clients.append({'name': name, 'address': d.address ~ '/32',
+        'public_key': d.public_key, 'preshared_key': d.preshared_key}) -%}
   {%- endfor -%}
   {{ clients }}
-wireguard_client_endpoint: "{{ ansible_host }}:{{ wireguard_listen_port }}"
-wireguard_client_routes: "{{ stack.network.cidr }}"
-wireguard_client_dns: []
 
 stack_public_interface: >-
   {{ ansible_facts.default_ipv4.interface if stack.server.public_interface | default('auto') == 'auto'

@@ -39,7 +39,7 @@ app_env:
   TF_VAR_vault_kv_path: secret
   TF_VAR_state_passphrase: '{{ secret "vault_tofu_state_passphrase" }}'
 requires:
-  damstack: ">=0.2.0"
+  damstack: ">=0.3.0"
   toolbox: ">=1.1.0, <2.0.0"
   host: [ssh-key, wireguard]
 
@@ -142,10 +142,15 @@ server:
   first_user: "{{ .config.server.bootstrap_user }}"
   ops_user: "{{ .config.server.ops_user }}"
   tunnel: "{{ firstHost .config.network.cidr }}"
-  tunnel_configs: "clients/*.conf"
   tunnel_help: >-
-    Import clients/{{ index .config.network.clients 0 }}.conf of the project into the WireGuard app,
-    or wg-quick up it, and turn the tunnel on.
+    damstack tunnel show {{ index .config.network.clients 0 }} puts the tunnel into the WireGuard app;
+    turn it on there, and any other VPN off.
+  wireguard:
+    secret: vault_wireguard
+    devices: network.clients
+    network: "{{ .config.network.cidr }}"
+    endpoint: "{{ .config.server.address }}:51820"
+    apply: wireguard
 
 backup:
   from: "{{ .config.backup.server.path }}"
@@ -232,6 +237,11 @@ commands:
     ansible:
       <<: *ansible
       playbook: ansible/playbooks/provision.yml
+  wireguard:
+    title: The keys of the private network
+    ansible:
+      <<: *ansible
+      playbook: ansible/playbooks/wireguard.yml
 
 check:
   answers: test/answers.yaml

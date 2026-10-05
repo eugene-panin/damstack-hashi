@@ -1,0 +1,14 @@
+---
+- name: Set the WireGuard keys of the server and of the devices
+  hosts: stack
+  gather_facts: true
+  tasks:
+    - name: Take the WireGuard keys of the devices
+      ansible.builtin.include_role:
+        name: eugene_panin.base.wireguard_client
+
+    - name: Configure the WireGuard interface with them
+      ansible.builtin.include_role:
+        name: eugene_panin.base.wireguard
+      vars:
+        wireguard_peers: "{{ wireguard_client_peers }}"

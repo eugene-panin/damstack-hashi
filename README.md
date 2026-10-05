@@ -26,9 +26,16 @@ records to create by hand, and
 `damstack provision --check --diff` shows what `provision` would change.
 
 The project is data only: `stack.yaml`, the one file you edit, the encrypted
-`vault.yml`, `ca.pem`, the encrypted OpenTofu state in `state/`, and the
-WireGuard files of your devices in `clients/`. The code is this stack, at the
-version the project was deployed with, mounted read-only.
+`vault.yml`, `ca.pem` and the encrypted OpenTofu state in `state/`. The code
+is this stack, at the version the project was deployed with.
+
+The WireGuard keys of the server and of every device in `network.clients` are
+made by damstack on the laptop and kept in `vault.yml` as `vault_wireguard`:
+the server gets the public keys and a preshared key per device, nothing
+private. `damstack tunnel show <device>` puts a device's configuration into
+the WireGuard app, or shows a QR code with `--qr`; `damstack tunnel add`,
+`remove` and `rotate` change them, setting them on the server with the
+`wireguard` command, over the public address.
 
 ## Layout
 

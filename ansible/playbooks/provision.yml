@@ -3,7 +3,7 @@
   hosts: stack
   gather_facts: true
   tasks:
-    - name: Issue the WireGuard client keys
+    - name: Take the WireGuard keys of the devices
       ansible.builtin.include_role:
         name: eugene_panin.base.wireguard_client
 
@@ -12,29 +12,6 @@
         name: eugene_panin.base.wireguard
       vars:
         wireguard_peers: "{{ wireguard_client_peers }}"
-
-    - name: Render the WireGuard client configurations
-      ansible.builtin.include_role:
-        name: eugene_panin.base.wireguard_client
-
-    - name: Fetch the client configurations
-      ansible.builtin.fetch:
-        src: "{{ wireguard_client_dir }}/{{ item.name }}.conf"
-        dest: "{{ stack_client_dir }}/{{ item.name }}.conf"
-        flat: true
-      loop: "{{ wireguard_client_list }}"
-      loop_control:
-        label: "{{ item.name }}"
-
-    - name: Keep the fetched configurations readable only by their owner
-      ansible.builtin.file:
-        path: "{{ stack_client_dir }}/{{ item.name }}.conf"
-        mode: '0600'
-      loop: "{{ wireguard_client_list }}"
-      loop_control:
-        label: "{{ item.name }}"
-      delegate_to: localhost
-      become: false
 
     - name: Deny incoming except SSH, WireGuard and the declared ports
       ansible.builtin.include_role:
