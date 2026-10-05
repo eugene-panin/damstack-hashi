@@ -3,6 +3,9 @@
   hosts: stack
   gather_facts: true
   tasks:
+    - name: Authorize the SSH key of the project
+      ansible.builtin.include_tasks: tasks/project-key.yml
+
     - name: Take the WireGuard keys of the devices
       ansible.builtin.include_role:
         name: eugene_panin.base.wireguard_client

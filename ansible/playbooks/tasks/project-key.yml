@@ -1,0 +1,11 @@
+---
+- name: Let damstack log in as the ops user with the key of the project, replacing the one before it
+  ansible.builtin.lineinfile:
+    path: "~{{ stack_ops_user }}/.ssh/authorized_keys"
+    regexp: " damstack-project-key$"
+    line: "{{ vault_ssh_project_key.public_key }}"
+    owner: "{{ stack_ops_user }}"
+    group: "{{ stack_ops_user }}"
+    mode: "0600"
+    state: present
+  when: vault_ssh_project_key is defined

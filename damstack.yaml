@@ -151,6 +151,9 @@ server:
     network: "{{ .config.network.cidr }}"
     endpoint: "{{ .config.server.address }}:51820"
     apply: wireguard
+  ssh_key:
+    secret: vault_ssh_project_key
+    apply: access
 
 backup:
   from: "{{ .config.backup.server.path }}"
@@ -237,6 +240,11 @@ commands:
     ansible:
       <<: *ansible
       playbook: ansible/playbooks/provision.yml
+  access:
+    title: The SSH key of the project
+    ansible:
+      <<: *ansible
+      playbook: ansible/playbooks/access.yml
   wireguard:
     title: The keys of the private network
     ansible:
