@@ -101,6 +101,7 @@ secrets:
   - name: vault_stack_ca_key
     generate: ca
     cert: ca.pem
+    rotate: true
   - name: vault_consul_gossip_key
     generate: base64
   - name: vault_consul_acl_bootstrap_token
