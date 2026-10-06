@@ -3,6 +3,10 @@
   hosts: stack
   gather_facts: true
   tasks:
+    - name: Keep the clock synchronized, which the certificates and tokens below rely on
+      ansible.builtin.include_role:
+        name: eugene_panin.base.timesync
+
     - name: Authorize the SSH key of the project
       ansible.builtin.include_tasks: tasks/project-key.yml
 
