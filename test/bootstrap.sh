@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
-# The bootstrap playbook, run from damstack-toolbox against a fresh Ubuntu 24.04
-# server with systemd for each scenario.
+# The bootstrap playbook, run with the native damstack toolbox against a fresh
+# Ubuntu 24.04 server with systemd for each scenario.
 set -euo pipefail
 
 stack=$(cd "$(dirname "$0")/.." && pwd)
-toolbox=${TOOLBOX:-ghcr.io/eugene-panin/damstack-toolbox:1.0.0}
+toolbox=${TOOLBOX:-$HOME/.cache/damstack/toolbox/1.1.0}
 run=$$
-net=damstack-bootstrap-$run
 mkdir -p "$HOME/.cache"
 work=$(mktemp -d "$HOME/.cache/damstack-bootstrap.XXXXXX")
 cleanup() {
   if [[ -n ${KEEP_LOGS:-} ]]; then mkdir -p "$KEEP_LOGS" && cp "$work"/*.log "$KEEP_LOGS"/ 2>/dev/null; fi
   docker ps -aq --filter "label=damstack-bootstrap=$run" | xargs -r docker rm -f >/dev/null
-  docker network rm "$net" >/dev/null 2>&1 || true
   rm -rf "$work"
 }
 trap cleanup EXIT
@@ -23,21 +21,21 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 ssh-keygen -q -t ed25519 -N "" -C damstack-test -f "$work/key"
 ssh-keygen -q -t ed25519 -N "" -C someone-else -f "$work/other"
 docker build -q -t damstack-bootstrap-target "$stack/test/bootstrap" >/dev/null
-docker network create "$net" >/dev/null
+mkdir -p "$work/home" "$work/tmp"
 
 tool() {
-  docker run --rm --network "$net" --user "$(id -u):$(id -g)" \
-    -v "$stack:/stack:ro" -v "$work:/work" \
-    -e ANSIBLE_CONFIG=/stack/ansible/ansible.cfg -e ANSIBLE_COLLECTIONS_PATH=/work/collections \
-    -e ANSIBLE_SSH_ARGS="-F /dev/null -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no" \
-    -e "DAMSTACK_SSH_PUBLIC_KEY=$(cat "$work/key.pub")" "$@"
+  env -i HOME="$work/home" TMPDIR="$work/tmp" PATH="$toolbox/bin:/usr/bin:/bin" \
+    ANSIBLE_CONFIG="$stack/ansible/ansible.cfg" ANSIBLE_HOME="$work/home/.ansible" \
+    ANSIBLE_COLLECTIONS_PATH="$work/collections" \
+    ANSIBLE_SSH_ARGS="-F /dev/null -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no" \
+    "DAMSTACK_SSH_PUBLIC_KEY=$(cat "$work/key.pub")" "$@"
 }
 
-tool "$toolbox" ansible-galaxy collection install -r /stack/ansible/requirements.yml -p /work/collections >/dev/null
+tool ansible-galaxy collection install -r "$stack/ansible/requirements.yml" -p "$work/collections" >/dev/null
 
 # target <name>: a fresh server that root logs in to with the test key
 target() {
-  docker run -d --name "$1-$run" --hostname "$1" --network "$net" --network-alias "$1" \
+  docker run -d --name "$1-$run" --hostname "$1" -p 127.0.0.1::22 \
     --label "damstack-bootstrap=$run" --privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
     damstack-bootstrap-target >/dev/null
   for _ in $(seq 60); do
@@ -50,13 +48,20 @@ target() {
 
 on() { docker exec "$1-$run" "${@:2}"; }
 
+# effective <name>: the settings sshd runs with, even while ssh restarts, when
+# the directory sshd needs and systemd makes is briefly gone
+effective() { on "$1" sh -c 'install -d -m 0755 /run/sshd && sshd -T'; }
+
+port() { docker port "$1-$run" 22 | head -1 | cut -d: -f2; }
+
 # project <name> <server> <ops user> [adopt]: a project whose stack.yaml points at the server
 project() {
   mkdir -p "$work/$1/.damstack"
+  echo "$2" >"$work/$1/.server"
   cat >"$work/$1/stack.yaml" <<EOF
 name: $1
 server:
-  address: $2
+  address: 127.0.0.1
   bootstrap_user: ${5:-root}
   ops_user: $3
   adopt_user: ${4:-false}
@@ -66,15 +71,17 @@ network: {cidr: 10.77.0.0/24, clients: [laptop]}
 EOF
 }
 
-# bootstrap <project>: run the playbook, its output in $work/<project>.log
-bootstrap() {
-  tool -e "DAMSTACK_PROJECT=/work/$1" "$toolbox" \
-    ansible-playbook -i /stack/ansible/inventory --private-key /work/key /stack/ansible/playbooks/bootstrap.yml \
-    >"$work/$1.log" 2>&1
+# playbook <project> <log>: run the bootstrap playbook on the server of the project
+playbook() {
+  tool "DAMSTACK_PROJECT=$work/$1" ansible-playbook -i "$stack/ansible/inventory" --private-key "$work/key" \
+    -e "ansible_port=$(port "$(cat "$work/$1/.server")")" "$stack/ansible/playbooks/bootstrap.yml" >"$2" 2>&1
 }
 
-logs_in() { tool "$toolbox" ssh -F /dev/null -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-  -o BatchMode=yes -o ConnectTimeout=5 -i /work/key "$1@$2" "${@:3}" >/dev/null 2>&1; }
+# bootstrap <project>: run the playbook, its output in $work/<project>.log
+bootstrap() { playbook "$1" "$work/$1.log"; }
+
+logs_in() { ssh -F /dev/null -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+  -o BatchMode=yes -o ConnectTimeout=5 -i "$work/key" -p "$(port "$2")" "$1@127.0.0.1" "${@:3}" >/dev/null 2>&1; }
 
 step "a fresh server whose provider allows root and passwords: ops is created, only its key logs in, root and passwords are off"
 target fresh
@@ -83,8 +90,8 @@ project fresh fresh ops
 bootstrap fresh || { cat "$work/fresh.log"; fail "bootstrap of a fresh server"; }
 logs_in ops fresh sudo -n true || fail "ops does not log in or use sudo"
 logs_in root fresh true && fail "root still logs in"
-on fresh sshd -T | grep -qx 'passwordauthentication no' || fail "password logins are on"
-on fresh sshd -T | grep -qx 'permitrootlogin no' || fail "root logins are on"
+effective fresh | grep -qx 'passwordauthentication no' || fail "password logins are on"
+effective fresh | grep -qx 'permitrootlogin no' || fail "root logins are on"
 on fresh test ! -e /etc/ssh/sshd_config.d/99-hardening.conf || fail "the hardening of an earlier version was left"
 on fresh cat /etc/damstack/ops-user | grep -qx 'created: true' || fail "the marker does not say created"
 
@@ -94,9 +101,7 @@ grep -Eq 'changed=0 .*failed=0' "$work/fresh.log" || { cat "$work/fresh.log"; fa
 
 step "another ops user in stack.yaml after the bootstrap is refused"
 sed -i.bak 's/ops_user: ops/ops_user: admin/' "$work/fresh/stack.yaml"
-tool -e "DAMSTACK_PROJECT=/work/fresh" "$toolbox" \
-  ansible-playbook -i /stack/ansible/inventory --private-key /work/key /stack/ansible/playbooks/bootstrap.yml \
-  >"$work/renamed.log" 2>&1 && fail "the server took another ops user"
+playbook fresh "$work/renamed.log" && fail "the server took another ops user"
 mv "$work/fresh/stack.yaml.bak" "$work/fresh/stack.yaml"
 grep -q "This server is set up for ops" "$work/renamed.log" || { cat "$work/renamed.log"; fail "no explanation"; }
 
