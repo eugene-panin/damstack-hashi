@@ -7,8 +7,7 @@ locals {
 }
 
 module "stack" {
-  source  = "eugene-panin/hashistack/nomad"
-  version = "~> 0.8"
+  source = "git::https://github.com/eugene-panin/terraform-nomad-hashistack.git?ref=v0.9.0"
 
   infra_domain             = local.stack.infra_domain
   address                  = cidrhost(local.stack.network.cidr, 1)
