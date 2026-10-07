@@ -1,0 +1,30 @@
+---
+- name: Put the data of the apps back from the backup
+  hosts: stack
+  gather_facts: false
+  tasks:
+    - name: Install the script that puts the copies of the host volumes back
+      ansible.builtin.copy:
+        src: restore-volumes
+        dest: /usr/local/sbin/damstack-restore-volumes
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Put the copies of the host volumes back, stopping the jobs that use them meanwhile
+      ansible.builtin.command:
+        argv:
+          - /usr/local/sbin/damstack-restore-volumes
+          - "{{ stack_restore_dir }}/var/backups/volumes"
+      environment: "{{ backup_hook_environment }}"
+      register: _stack_restored
+      changed_when: true
+
+    - name: Show what was put back
+      ansible.builtin.debug:
+        var: _stack_restored.stdout_lines
+
+    - name: Remove the unpacked backup from the server
+      ansible.builtin.file:
+        path: "{{ stack_restore_dir }}"
+        state: absent

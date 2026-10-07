@@ -39,7 +39,7 @@ app_env:
   TF_VAR_vault_kv_path: secret
   TF_VAR_state_passphrase: '{{ secret "vault_tofu_state_passphrase" }}'
 requires:
-  damstack: ">=0.5.0"
+  damstack: ">=0.8.0"
   toolbox: ">=1.1.0, <2.0.0"
   host: [ssh-key, wireguard]
 
@@ -210,6 +210,14 @@ steps:
       VAULT_CACERT: '{{ .dir.project }}/ca.pem'
       VAULT_TOKEN: '{{ secret "vault_root_token" }}'
     confirm: true
+  - name: restore-data
+    title: The data of the apps, from the backup
+    takes: 1 min
+    ansible:
+      <<: *ansible
+      playbook: ansible/playbooks/restore.yml
+    restore: true
+    after_apps: true
   - name: dns
     title: DNS records
     takes: 10 s

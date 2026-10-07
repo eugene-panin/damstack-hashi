@@ -3,4 +3,4 @@ collections:
   - name: eugene_panin.base
     version: 0.7.0
   - name: eugene_panin.hashistack
-    version: 0.7.1
+    version: 0.8.0

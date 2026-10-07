@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""Put the copies in SRC/<namespace>-<name> back into the Nomad host volumes of those names.
+
+Every job that uses a volume is stopped while its data is put back, and started
+again. The copies are those damstack-backup-volumes made; a new server gives
+the volumes their names again, not their IDs.
+"""
+
+import json
+import os
+import ssl
+import subprocess
+import sys
+import time
+import urllib.parse
+import urllib.request
+
+STOP_TIMEOUT = 120
+
+
+def api(path, **query):
+    url = os.environ["NOMAD_ADDR"].rstrip("/") + path
+    if query:
+        url += "?" + urllib.parse.urlencode(query)
+    req = urllib.request.Request(url, headers={"X-Nomad-Token": os.environ.get("NOMAD_TOKEN", "")})
+    ctx = ssl.create_default_context(cafile=os.environ.get("NOMAD_CACERT"))
+    with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
+        return json.load(resp)
+
+
+def nomad(*args):
+    subprocess.run(["nomad", *args], check=True, stdout=subprocess.DEVNULL)
+
+
+def volumes():
+    found = {}
+    for stub in api("/v1/volumes", type="host", namespace="*"):
+        vol = api("/v1/volume/host/" + stub["ID"], namespace=stub["Namespace"])
+        if vol.get("HostPath"):
+            found[(vol["Namespace"], vol["Name"])] = vol["HostPath"]
+    return found
+
+
+def users():
+    jobs = []
+    for stub in api("/v1/jobs", namespace="*"):
+        if stub.get("Stop") or stub.get("Status") == "dead":
+            continue
+        job = api("/v1/job/" + urllib.parse.quote(stub["ID"]), namespace=stub["Namespace"])
+        names = {v["Source"] for g in job.get("TaskGroups") or [] for v in (g.get("Volumes") or {}).values() if v.get("Type") == "host"}
+        jobs.append((job["Namespace"], job["ID"], names))
+    return jobs
+
+
+def wait_stopped(namespace, job):
+    deadline = time.monotonic() + STOP_TIMEOUT
+    while time.monotonic() < deadline:
+        allocs = api("/v1/job/" + urllib.parse.quote(job) + "/allocations", namespace=namespace)
+        if all(a["ClientStatus"] not in ("pending", "running") for a in allocs):
+            return True
+        time.sleep(1)
+    return False
+
+
+def copy(src, dest):
+    subprocess.run(["rsync", "-a", "--delete", "--numeric-ids", src.rstrip("/") + "/", dest.rstrip("/") + "/"], check=True)
+
+
+def main():
+    src = sys.argv[1]
+    vols = volumes()
+    by_copy = {f"{ns}-{name}": (ns, name) for ns, name in vols}
+    copies = {}
+    for name in sorted(os.listdir(src)):
+        if name in by_copy:
+            copies[by_copy[name]] = os.path.join(src, name)
+        else:
+            print(f"WARNING: no volume takes the copy {name}; it is left out", flush=True)
+    done = set()
+
+    for namespace, job, names in users():
+        keys = [(namespace, n) for n in sorted(names) if (namespace, n) in copies]
+        if not keys:
+            continue
+        print(f"stopping {namespace}/{job} to put back {', '.join(n for _, n in keys)}", flush=True)
+        nomad("job", "stop", "-namespace", namespace, "-detach", job)
+        try:
+            if not wait_stopped(namespace, job):
+                sys.exit(f"{namespace}/{job} did not stop in {STOP_TIMEOUT}s; nothing of it was put back")
+            for key in keys:
+                copy(copies[key], vols[key])
+                done.add(key)
+        finally:
+            nomad("job", "start", "-namespace", namespace, "-detach", job)
+            print(f"started {namespace}/{job} again", flush=True)
+
+    for key in sorted(set(copies) - done):
+        copy(copies[key], vols[key])
+    print(f"put {len(copies)} volume(s) back", flush=True)
+
+
+if __name__ == "__main__":
+    main()

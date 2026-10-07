@@ -37,6 +37,17 @@ the WireGuard app, or shows a QR code with `--qr`; `damstack tunnel add`,
 `remove` and `rotate` change them, setting them on the server with the
 `wireguard` command, over the public address.
 
+Every night the server backs up the snapshots of Consul, Nomad and Vault and
+a copy of every host volume, by its name; `damstack backup pull` copies them
+to the laptop. When the server is lost, `damstack restore` sets up a new one
+from the latest snapshot on the laptop: `provision` restores Consul and starts
+Vault from its snapshot, under the unseal keys and tokens in `vault.yml`;
+`apply` and the apps make their jobs and volumes anew; then `restore-data`, a
+step only a restore runs, puts the volumes back, stopping the jobs that use
+them meanwhile. Nomad is not restored from its snapshot: everything in it
+comes from OpenTofu. Tested on a GCP server: a mail, a key in Consul and a
+secret in Vault came back on a new disk, and through a reboot.
+
 ## Layout
 
 - `damstack.yaml`: the questions, the secrets, and the steps;

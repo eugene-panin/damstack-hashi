@@ -1,0 +1,15 @@
+---
+- name: Ensure the directory of the backup exists, root's only
+  ansible.builtin.file:
+    path: "{{ stack_restore_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Unpack the snapshot of the backup, its files with their owners
+  ansible.builtin.unarchive:
+    src: "{{ stack_restore }}"
+    dest: "{{ stack_restore_dir }}"
+    extra_opts: [--numeric-owner]
+    creates: "{{ stack_restore_dir }}/var/backups"
