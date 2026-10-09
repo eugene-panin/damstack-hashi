@@ -73,12 +73,23 @@ questions:
     section: Admin pages
     prompt: Your email, for Let's Encrypt about the certificates
     pattern: "^[^@\\s]+@[^@\\s]+$"
+  - name: infra_tls
+    section: Admin pages
+    prompt: How the admin pages get their certificate
+    note: >-
+      letsencrypt-dns needs API access to the domain's DNS (a token); internal-ca
+      signs them with the project's own CA (no token, trusted by damstack trust) —
+      pick it when you can only add DNS records by hand.
+    type: enum
+    options: [letsencrypt-dns, internal-ca]
+    default: letsencrypt-dns
   - name: dns_provider
     section: Admin pages
     prompt: Where the DNS of that domain is
     type: enum
     options: [cloudflare, other]
     default: cloudflare
+    when: infra_tls=letsencrypt-dns
   - name: dns_zones
     section: Admin pages
     prompt: Domains on Cloudflare damstack may add records to, that one among them
@@ -197,6 +208,7 @@ steps:
     tunnel: true
     env: &tofu
       TF_VAR_state_passphrase: '{{ secret "vault_tofu_state_passphrase" }}'
+      TF_VAR_stack_ca_key: '{{ secret "vault_stack_ca_key" }}'
       TF_VAR_traefik_cloudflare_token: '{{ secret "vault_cloudflare_traefik_token" }}'
       TF_VAR_acme_dns_env: '{{ secret "vault_acme_dns_env" }}'
       CLOUDFLARE_API_TOKEN: '{{ secret "vault_cloudflare_api_token" }}'

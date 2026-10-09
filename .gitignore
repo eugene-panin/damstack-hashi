@@ -1,1 +1,4 @@
 __pycache__/
+
+infra/zz_local_override.tf
+.terraform/

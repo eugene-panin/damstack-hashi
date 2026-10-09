@@ -9,6 +9,13 @@ variable "state_passphrase" {
   sensitive   = true
 }
 
+variable "stack_ca_key" {
+  description = "PEM private key of the project's CA; when certificates.mode is internal-ca it signs the admin-pages wildcard. Kept in vault.yml of the project."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "traefik_cloudflare_token" {
   description = "Cloudflare token Traefik answers DNS-01 challenges with when certificates.dns_provider is cloudflare; kept in vault.yml of the project."
   type        = string

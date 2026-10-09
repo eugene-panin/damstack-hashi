@@ -53,7 +53,12 @@ dns:
 # token is vault_cloudflare_traefik_token; with another, the NAME=value pairs in
 # vault_acme_dns_env.
 certificates:
+  # letsencrypt-dns: admin pages get a Let's Encrypt wildcard through DNS-01 (needs
+  # a DNS token below). internal-ca: signed by the project's own CA, no token.
+  mode: {{ yaml .infra_tls }}
+{{- if eq .infra_tls "letsencrypt-dns" }}
   dns_provider: {{ if eq .dns_provider "cloudflare" }}cloudflare{{ else }}{{ yaml .acme_dns_provider }}{{ end }}
+{{- end }}
 
 # Vault seals itself every time it starts. true keeps its unseal keys on the server, readable
 # by root only, so it unseals itself after a reboot; false leaves it sealed, and the platform
