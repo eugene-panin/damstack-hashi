@@ -129,7 +129,7 @@
             server = "https://127.0.0.1:8501"
             token  = "{{ consul_acl_dns_token }}"
             tls_config {
-              ca_file = "/etc/consul.d/tls/ca.pem"
+              insecure_skip_verify = true
             }
           }
 
