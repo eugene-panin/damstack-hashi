@@ -25,7 +25,7 @@ tokens:
   nomad: vault_nomad_acl_bootstrap_token
   consul: vault_consul_acl_bootstrap_token
   vault: vault_root_token
-provides: [nomad, vault-kv, consul, ingress-traefik]
+provides: [nomad, vault-kv, consul, ingress-traefik, observability]
 app_env:
   NOMAD_ADDR: 'https://{{ firstHost .config.network.cidr }}:4646'
   NOMAD_CACERT: '{{ .dir.project }}/ca.pem'

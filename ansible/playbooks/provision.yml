@@ -113,6 +113,46 @@
       ansible.builtin.include_role:
         name: eugene_panin.hashistack.nomad
 
+    - name: Ship host and app metrics and logs to the observability backends
+      ansible.builtin.include_role:
+        name: eugene_panin.observability.alloy
+      vars:
+        alloy_mimir_remote_write_url: "http://{{ stack_address }}:9009/api/v1/push"
+        alloy_loki_push_url: "http://{{ stack_address }}:3100/loki/api/v1/push"
+        alloy_host_metrics: true
+        alloy_journal_logs: true
+        alloy_extra_config: |
+          // App metrics: every Consul service tagged "metrics", scraped on /metrics
+          // and remote-written to Mimir. An app joins the set by registering with
+          // that tag — no change here.
+          discovery.consul "apps" {
+            server = "https://127.0.0.1:8501"
+            token  = "{{ consul_acl_dns_token }}"
+            tls_config {
+              ca_file = "/etc/consul.d/tls/ca.pem"
+            }
+          }
+
+          discovery.relabel "apps" {
+            targets = discovery.consul.apps.targets
+
+            rule {
+              source_labels = ["__meta_consul_tags"]
+              regex         = ".*,metrics,.*"
+              action        = "keep"
+            }
+
+            rule {
+              source_labels = ["__meta_consul_service"]
+              target_label  = "app"
+            }
+          }
+
+          prometheus.scrape "apps" {
+            targets    = discovery.relabel.apps.output
+            forward_to = [prometheus.remote_write.mimir.receiver]
+          }
+
     - name: Read the Vault policy the backup takes snapshots with
       ansible.builtin.uri:
         url: "https://{{ stack_address }}:8200/v1/sys/policies/acl/backup"
