@@ -192,6 +192,55 @@
         name: nomad
         state: restarted
 
+    # consul-cni redirects a mesh task's traffic through its Envoy sidecar
+    # (transparent proxy). Kept in a directory of its own version, linked into the
+    # CNI plugin path; Nomad sees it after a restart.
+    - name: Give Nomad the consul-cni plugin for the service mesh
+      vars:
+        _cni_dir: "/opt/cni/consul-cni-{{ stack_consul_cni_version }}"
+        _cni_zip: "consul-cni_{{ stack_consul_cni_version }}_linux_{{ _stack_arch }}.zip"
+        _cni_url: "https://releases.hashicorp.com/consul-cni/{{ stack_consul_cni_version }}"
+      block:
+        - name: unzip is installed
+          ansible.builtin.apt:
+            name: unzip
+            state: present
+
+        - name: The consul-cni release directory exists
+          ansible.builtin.file:
+            path: "{{ _cni_dir }}"
+            state: directory
+            owner: root
+            group: root
+            mode: '0755'
+
+        - name: consul-cni is downloaded, verified against the published checksum
+          ansible.builtin.get_url:
+            url: "{{ _cni_url }}/{{ _cni_zip }}"
+            dest: "/opt/cni/{{ _cni_zip }}"
+            checksum: "sha256:{{ _cni_url }}/consul-cni_{{ stack_consul_cni_version }}_SHA256SUMS"
+            mode: '0644'
+
+        - name: consul-cni is unpacked into its release directory
+          ansible.builtin.unarchive:
+            src: "/opt/cni/{{ _cni_zip }}"
+            dest: "{{ _cni_dir }}"
+            remote_src: true
+            creates: "{{ _cni_dir }}/consul-cni"
+
+        - name: consul-cni is in the plugin path Nomad reads
+          ansible.builtin.file:
+            src: "{{ _cni_dir }}/consul-cni"
+            dest: /opt/cni/bin/consul-cni
+            state: link
+          register: _consul_cni
+
+    - name: Let Nomad see a newly linked consul-cni
+      when: _consul_cni is changed
+      ansible.builtin.systemd:
+        name: nomad
+        state: restarted
+
     - name: Ship host and app metrics and logs to the observability backends
       ansible.builtin.include_role:
         name: eugene_panin.observability.alloy
