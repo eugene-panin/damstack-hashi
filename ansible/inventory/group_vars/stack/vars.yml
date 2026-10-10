@@ -93,6 +93,11 @@ consul_extra_config:
     metrics_provider: prometheus
     metrics_proxy:
       base_url: "http://{{ stack_address }}:9009/prometheus"
+      # The allowlist is matched against the whole target path, which carries
+      # Mimir's /prometheus prefix (the default allows only /api/v1/query*).
+      path_allowlist:
+        - /prometheus/api/v1/query
+        - /prometheus/api/v1/query_range
 
 vault_version: 2.1.1
 vault_bind_address: "{{ stack_address }}"
