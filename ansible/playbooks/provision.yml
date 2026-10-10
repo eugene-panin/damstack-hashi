@@ -142,6 +142,53 @@
       ansible.builtin.include_role:
         name: eugene_panin.hashistack.consul_dns
 
+    # The mesh's Envoy sidecars reach Consul's gRPC port, and Envoy (BoringSSL)
+    # refuses a server certificate with IP addresses when its CA constrains IP
+    # ranges, as the project CA does. So the gRPC port gets a certificate of its
+    # own from the same CA, with DNS names only, in a config file next to the
+    # role's (Consul reads the whole config dir).
+    - name: Issue Consul's gRPC certificate, with DNS names only
+      ansible.builtin.include_role:
+        name: eugene_panin.hashistack.tls_certificate
+      vars:
+        tls_certificate_ca_cert: "{{ stack_ca_cert }}"
+        tls_certificate_ca_key: "{{ stack_ca_key }}"
+        tls_certificate_dir: /etc/consul.d/tls
+        tls_certificate_name: grpc
+        tls_certificate_owner: consul
+        tls_certificate_group: consul
+        tls_certificate_common_name: "server.{{ consul_datacenter }}.consul"
+        tls_certificate_subject_alt_names:
+          - "DNS:server.{{ consul_datacenter }}.consul"
+          - DNS:localhost
+        tls_certificate_extended_key_usage:
+          - serverAuth
+
+    - name: Consul serves gRPC with it
+      ansible.builtin.copy:
+        dest: /etc/consul.d/grpc-tls.json
+        content: >-
+          {{ {'tls': {'grpc': {'cert_file': '/etc/consul.d/tls/grpc.pem',
+                               'key_file': '/etc/consul.d/tls/grpc-key.pem'}}} | to_nice_json }}
+        owner: consul
+        group: consul
+        mode: '0640'
+      register: _consul_grpc_tls
+
+    - name: Apply Consul's gRPC certificate
+      when: _consul_grpc_tls is changed or (tls_certificate_changed | default(false) | bool)
+      block:
+        - name: Restart Consul
+          ansible.builtin.systemd:
+            name: consul
+            state: restarted
+
+        - name: Consul answers again
+          ansible.builtin.wait_for:
+            host: 127.0.0.1
+            port: 8501
+            timeout: 120
+
     - name: Run Vault
       ansible.builtin.include_role:
         name: eugene_panin.hashistack.vault
