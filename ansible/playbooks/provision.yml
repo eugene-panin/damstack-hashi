@@ -97,6 +97,47 @@
       when: not ansible_check_mode or _stack_consul_binary.stat.exists
       no_log: true
 
+    # Vault registers itself in Consul (vault_extra_config), so apps reach it as
+    # active.vault.service.consul, which its certificate names, wherever it runs.
+    - name: Ensure the policy Vault registers itself with
+      community.general.consul_policy:
+        name: vault
+        description: Vault registering itself as the service vault
+        rules: |
+          service "vault" {
+            policy = "write"
+          }
+          agent_prefix "" {
+            policy = "read"
+          }
+          node_prefix "" {
+            policy = "read"
+          }
+        token: "{{ consul_acl_bootstrap_token }}"
+        scheme: https
+        host: 127.0.0.1
+        port: 8501
+        ca_path: /etc/consul.d/tls/ca.pem
+        state: present
+      when: not ansible_check_mode or _stack_consul_binary.stat.exists
+      no_log: true
+
+    - name: Ensure Vault's Consul token
+      community.general.consul_token:
+        accessor_id: "{{ 'vault-service' | to_uuid }}"
+        secret_id: "{{ vault_vault_consul_token }}"
+        description: Vault service registration
+        policies:
+          - name: vault
+        token: "{{ consul_acl_bootstrap_token }}"
+        scheme: https
+        host: 127.0.0.1
+        port: 8501
+        ca_path: /etc/consul.d/tls/ca.pem
+        state: present
+      when: not ansible_check_mode or _stack_consul_binary.stat.exists
+      no_log: true
+
     - name: Resolve Consul names on the host and for the tunnel
       ansible.builtin.include_role:
         name: eugene_panin.hashistack.consul_dns

@@ -148,6 +148,9 @@ secrets:
     generate: uuid
   - name: vault_nomad_consul_token
     generate: uuid
+  - name: vault_vault_consul_token
+    generate: uuid
+    rotate: true
   - name: vault_tofu_state_passphrase
     generate: hex
   - name: vault_backup_password
