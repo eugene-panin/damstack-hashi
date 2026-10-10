@@ -50,7 +50,7 @@ resource "tls_locally_signed_cert" "internal" {
 }
 
 module "stack" {
-  source = "git::https://github.com/eugene-panin/terraform-nomad-hashistack.git?ref=v0.10.0"
+  source = "git::https://github.com/eugene-panin/terraform-nomad-hashistack.git?ref=v0.11.0"
 
   infra_domain             = local.stack.infra_domain
   address                  = cidrhost(local.stack.network.cidr, 1)
@@ -60,6 +60,7 @@ module "stack" {
   dns_provider_env         = local.dns_provider_env
   dns_provider_env_version = var.traefik_cloudflare_token_version
   internal_tls             = local.internal_tls
+  traefik_dashboard        = try(local.stack.traefik.dashboard, false)
 }
 
 removed {

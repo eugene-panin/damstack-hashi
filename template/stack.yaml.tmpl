@@ -60,6 +60,12 @@ certificates:
   dns_provider: {{ if eq .dns_provider "cloudflare" }}cloudflare{{ else }}{{ yaml .acme_dns_provider }}{{ end }}
 {{- end }}
 
+# Traefik's dashboard at traefik.<infra_domain>, next to the other admin pages: through
+# WireGuard only. It has no login of its own, so anyone on the private network sees the
+# routes.
+traefik:
+  dashboard: false
+
 # Vault seals itself every time it starts. true keeps its unseal keys on the server, readable
 # by root only, so it unseals itself after a reboot; false leaves it sealed, and the platform
 # down, until the next damstack deploy, with the keys only in vault.yml.
