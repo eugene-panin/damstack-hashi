@@ -50,7 +50,7 @@ resource "tls_locally_signed_cert" "internal" {
 }
 
 module "stack" {
-  source = "git::https://github.com/eugene-panin/terraform-nomad-hashistack.git?ref=v0.11.0"
+  source = "git::https://github.com/eugene-panin/terraform-nomad-hashistack.git?ref=v0.12.0"
 
   infra_domain             = local.stack.infra_domain
   address                  = cidrhost(local.stack.network.cidr, 1)
