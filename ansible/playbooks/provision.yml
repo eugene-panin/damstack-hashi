@@ -97,6 +97,45 @@
       when: not ansible_check_mode or _stack_consul_binary.stat.exists
       no_log: true
 
+    # Alloy finds the services to scrape in Consul's catalog, with a token of its
+    # own that only reads it (the DNS token it used could not, so no app metric
+    # was ever scraped). The datacenter is given, so it needs no agent access.
+    - name: Ensure the policy Alloy discovers services with
+      community.general.consul_policy:
+        name: alloy
+        description: Alloy reading the catalog to find what to scrape
+        rules: |
+          service_prefix "" {
+            policy = "read"
+          }
+          node_prefix "" {
+            policy = "read"
+          }
+        token: "{{ consul_acl_bootstrap_token }}"
+        scheme: https
+        host: 127.0.0.1
+        port: 8501
+        ca_path: /etc/consul.d/tls/ca.pem
+        state: present
+      when: not ansible_check_mode or _stack_consul_binary.stat.exists
+      no_log: true
+
+    - name: Ensure Alloy's Consul token
+      community.general.consul_token:
+        accessor_id: "{{ 'alloy-discovery' | to_uuid }}"
+        secret_id: "{{ vault_alloy_consul_token }}"
+        description: Alloy service discovery
+        policies:
+          - name: alloy
+        token: "{{ consul_acl_bootstrap_token }}"
+        scheme: https
+        host: 127.0.0.1
+        port: 8501
+        ca_path: /etc/consul.d/tls/ca.pem
+        state: present
+      when: not ansible_check_mode or _stack_consul_binary.stat.exists
+      no_log: true
+
     # Vault registers itself in Consul (vault_extra_config), so apps reach it as
     # active.vault.service.consul, which its certificate names, wherever it runs.
     - name: Ensure the policy Vault registers itself with
@@ -301,8 +340,9 @@
           // and remote-written to Mimir. An app joins the set by registering with
           // that tag — no change here.
           discovery.consul "apps" {
-            server = "https://127.0.0.1:8501"
-            token  = "{{ consul_acl_dns_token }}"
+            server     = "https://127.0.0.1:8501"
+            datacenter = "{{ consul_datacenter }}"
+            token      = "{{ vault_alloy_consul_token }}"
             tls_config {
               insecure_skip_verify = true
             }
