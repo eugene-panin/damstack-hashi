@@ -110,9 +110,11 @@
         name: eugene_panin.base.docker
 
     # A registry login for the docker driver, so jobs pull private images. Written
-    # before the Nomad agent, which nomad_extra_config points at this file; the
-    # restart both queue flushes once, after the file is in place. Absent registry
-    # leaves nomad_extra_config {} and this is skipped.
+    # before the Nomad agent: nomad_extra_config points its auth.config at this file,
+    # so it must exist when the agent (re)starts. The agent config gains the plugin
+    # block on this run and the Nomad role restarts the agent itself; a later run that
+    # only changes the login does not touch the agent config, so the restart below
+    # applies it. Absent registry leaves nomad_extra_config {} and both are skipped.
     - name: Give the Nomad client a container registry login for private images
       when: ((stack.registry | default({})).server | default('')) | length > 0
       block:
@@ -135,11 +137,19 @@
                  {'auth': (stack.registry.username | default('') ~ ':' ~ vault_registry_password) | b64encode}}}
                  | to_nice_json }}
           no_log: true
-          notify: "restart nomad"
+          register: _registry_auth
 
     - name: Run the Nomad agent
       ansible.builtin.include_role:
         name: eugene_panin.hashistack.nomad
+
+    - name: Apply a changed registry login to the running Nomad agent
+      when:
+        - _registry_auth is defined
+        - _registry_auth is changed
+      ansible.builtin.systemd:
+        name: nomad
+        state: restarted
 
     - name: Ship host and app metrics and logs to the observability backends
       ansible.builtin.include_role:
