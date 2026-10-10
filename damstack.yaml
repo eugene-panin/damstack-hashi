@@ -107,6 +107,27 @@ questions:
     type: list
     default: [laptop]
     pattern: "^[a-z][a-z0-9-]{0,30}$"
+  - name: private_registry
+    section: Private images
+    note: >-
+      For apps whose images are in a private container registry: the Nomad client
+      logs in to it so it can pull them. Leave it off for public images only.
+    prompt: Do the apps pull images from a private registry?
+    type: enum
+    options: [no, yes]
+    default: no
+    advanced: true
+  - name: registry_server
+    section: Private images
+    prompt: The registry host, such as ghcr.io
+    default: ghcr.io
+    pattern: "^[a-z0-9.-]+(:[0-9]+)?$"
+    when: private_registry=yes
+  - name: registry_username
+    section: Private images
+    prompt: The username the login uses (any value for a token-only registry)
+    pattern: "^[A-Za-z0-9._-]+$"
+    when: private_registry=yes
 
 secrets:
   - name: vault_stack_ca_key
@@ -146,6 +167,9 @@ secrets:
       The credentials of that provider for the certificate of the admin pages, as NAME=value pairs
       separated by spaces, with the names its page in https://go-acme.github.io/lego/dns/ gives
     when: dns_provider=other
+  - name: vault_registry_password
+    ask: The password or token the Nomad client pulls private images with
+    when: private_registry=yes
 
 config: template/stack.yaml.tmpl
 

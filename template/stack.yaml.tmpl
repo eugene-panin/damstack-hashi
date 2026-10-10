@@ -65,6 +65,14 @@ certificates:
 # down, until the next damstack deploy, with the keys only in vault.yml.
 vault:
   auto_unseal: true
+{{- if eq .private_registry "yes" }}
+
+# A container registry the Nomad client logs in to, so jobs can pull private images.
+# The password is the secret vault_registry_password. Remove this block for none.
+registry:
+  server: {{ yaml .registry_server }}
+  username: {{ yaml .registry_username }}
+{{- end }}
 
 # Backups, made with restic: on the server every night, and on your laptop when damstack
 # pulls them, every pull_every while the laptop is on (off: only damstack backup pull).

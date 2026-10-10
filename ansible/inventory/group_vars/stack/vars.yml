@@ -114,6 +114,16 @@ nomad_consul_token: "{{ vault_nomad_consul_token }}"
 nomad_vault_address: "https://{{ stack_address }}:8200"
 nomad_vault_ca_cert: "{{ stack_ca_cert }}"
 
+# Optional container registry login for the Nomad docker driver, so jobs can pull
+# private images. Set under stack.registry (server, username); the password is the
+# secret vault_registry_password. An empty or absent server means no registry login,
+# and nomad_extra_config stays {} — the agent config is unchanged.
+nomad_config_dir: /etc/nomad.d
+nomad_docker_auth_file: "{{ nomad_config_dir }}/docker-auth.json"
+nomad_extra_config: >-
+  {{ {'plugin': [{'docker': [{'config': [{'auth': [{'config': nomad_docker_auth_file}]}]}]}]}
+     if ((stack.registry | default({})).server | default('')) | length > 0 else {} }}
+
 backup_repository: "{{ stack.backup.server.path }}"
 backup_password: "{{ vault_backup_password }}"
 backup_compression: "{{ stack.backup.compression | default('auto') }}"

@@ -109,6 +109,34 @@
       ansible.builtin.include_role:
         name: eugene_panin.base.docker
 
+    # A registry login for the docker driver, so jobs pull private images. Written
+    # before the Nomad agent, which nomad_extra_config points at this file; the
+    # restart both queue flushes once, after the file is in place. Absent registry
+    # leaves nomad_extra_config {} and this is skipped.
+    - name: Give the Nomad client a container registry login for private images
+      when: ((stack.registry | default({})).server | default('')) | length > 0
+      block:
+        - name: The Nomad configuration directory exists
+          ansible.builtin.file:
+            path: "{{ nomad_config_dir }}"
+            state: directory
+            owner: root
+            group: root
+            mode: '0700'
+
+        - name: The registry auth file is in place
+          ansible.builtin.copy:
+            dest: "{{ nomad_docker_auth_file }}"
+            owner: root
+            group: root
+            mode: '0600'
+            content: >-
+              {{ {'auths': {stack.registry.server:
+                 {'auth': (stack.registry.username | default('') ~ ':' ~ vault_registry_password) | b64encode}}}
+                 | to_nice_json }}
+          no_log: true
+          notify: "restart nomad"
+
     - name: Run the Nomad agent
       ansible.builtin.include_role:
         name: eugene_panin.hashistack.nomad
