@@ -50,7 +50,7 @@ resource "tls_locally_signed_cert" "internal" {
 }
 
 module "stack" {
-  source = "git::https://github.com/eugene-panin/terraform-nomad-hashistack.git?ref=v0.12.0"
+  source = "git::https://github.com/eugene-panin/terraform-nomad-hashistack.git?ref=v0.13.0"
 
   infra_domain             = local.stack.infra_domain
   address                  = cidrhost(local.stack.network.cidr, 1)
@@ -61,6 +61,11 @@ module "stack" {
   dns_provider_env_version = var.traefik_cloudflare_token_version
   internal_tls             = local.internal_tls
   traefik_dashboard        = try(local.stack.traefik.dashboard, false)
+
+  # Google sign-in to Vault, and Vault as the OIDC provider of Nomad; off without
+  # sso in stack.yaml.
+  sso                      = try(local.stack.sso, null)
+  sso_google_client_secret = var.sso_google_client_secret
 }
 
 removed {

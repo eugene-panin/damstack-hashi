@@ -79,6 +79,18 @@ registry:
   server: {{ yaml .registry_server }}
   username: {{ yaml .registry_username }}
 {{- end }}
+{{- if eq .sso "yes" }}
+
+# Single sign-on: people sign in to Vault with Google, only these addresses, and to Nomad
+# through Vault (the admins get everything in Vault and management in Nomad). The client
+# secret is vault_sso_google_client_secret. The bootstrap tokens stay as the way in when
+# Google is out of reach. Remove this block to turn it off.
+sso:
+  google_client_id: {{ yaml .sso_google_client_id }}
+  admins: {{ yaml .sso_admins }}
+  # How long a sign-in lasts, in hours.
+  session_hours: 8
+{{- end }}
 
 # Backups, made with restic: on the server every night, and on your laptop when damstack
 # pulls them, every pull_every while the laptop is on (off: only damstack backup pull).

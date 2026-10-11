@@ -42,3 +42,11 @@ variable "traefik_cloudflare_token_version" {
   type        = number
   default     = 1
 }
+
+variable "sso_google_client_secret" {
+  description = "Secret of the Google OAuth client of sso; kept in vault.yml of the project."
+  type        = string
+  sensitive   = true
+  ephemeral   = true
+  default     = ""
+}
