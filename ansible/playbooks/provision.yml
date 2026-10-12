@@ -58,6 +58,40 @@
         mode: "0644"
       when: stack_restore | length > 0
 
+    # Consul does not let a token's secret change: a token whose secret
+    # damstack secret rotate made anew goes, and the tasks below make it again.
+    - name: Read the Consul tokens of Nomad, Alloy and Vault
+      ansible.builtin.uri:
+        url: "https://127.0.0.1:8501/v1/acl/token/{{ item.accessor | to_uuid }}"
+        headers:
+          X-Consul-Token: "{{ consul_acl_bootstrap_token }}"
+        ca_path: /etc/consul.d/tls/ca.pem
+        status_code: [200, 403, 404]
+        return_content: true
+      loop:
+        - {accessor: nomad-agent, secret: "{{ nomad_consul_token }}"}
+        - {accessor: alloy-discovery, secret: "{{ vault_alloy_consul_token }}"}
+        - {accessor: vault-service, secret: "{{ vault_vault_consul_token }}"}
+      check_mode: false
+      register: _stack_consul_tokens
+      when: not ansible_check_mode or _stack_consul_binary.stat.exists
+      no_log: true
+
+    - name: Delete the Consul tokens whose secret was made anew
+      community.general.consul_token:
+        accessor_id: "{{ item.item.accessor | to_uuid }}"
+        token: "{{ consul_acl_bootstrap_token }}"
+        scheme: https
+        host: 127.0.0.1
+        port: 8501
+        ca_path: /etc/consul.d/tls/ca.pem
+        state: absent
+      loop: "{{ _stack_consul_tokens.results | default([]) }}"
+      when:
+        - item.status | default(0) == 200
+        - item.json.SecretID != item.item.secret
+      no_log: true
+
     - name: Ensure the policy the Nomad agent registers with
       community.general.consul_policy:
         name: nomad-agent

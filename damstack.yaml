@@ -163,8 +163,10 @@ secrets:
     generate: uuid
   - name: vault_consul_acl_dns_token
     generate: uuid
+    rotate: true
   - name: vault_consul_acl_agent_token
     generate: uuid
+    rotate: true
   - name: vault_nomad_gossip_key
     generate: base64
   - name: vault_nomad_acl_bootstrap_token

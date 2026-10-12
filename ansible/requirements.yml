@@ -3,6 +3,6 @@ collections:
   - name: eugene_panin.base
     version: 0.7.0
   - name: eugene_panin.hashistack
-    version: 0.8.0
+    version: 0.8.1
   - name: eugene_panin.observability
     version: 0.1.1
