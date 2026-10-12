@@ -39,7 +39,7 @@ app_env:
   TF_VAR_vault_kv_path: secret
   TF_VAR_state_passphrase: '{{ secret "vault_tofu_state_passphrase" }}'
 requires:
-  damstack: ">=0.8.0"
+  damstack: ">=0.10.0"
   toolbox: ">=1.1.0, <2.0.0"
   host: [ssh-key, wireguard]
 
@@ -159,8 +159,10 @@ secrets:
     rotate: true
   - name: vault_consul_gossip_key
     generate: base64
+    keep: a gossip key changes in two runs, which damstack does not do yet
   - name: vault_consul_acl_bootstrap_token
     generate: uuid
+    keep: Consul's ACLs were bootstrapped with it
   - name: vault_consul_acl_dns_token
     generate: uuid
     rotate: true
@@ -169,8 +171,10 @@ secrets:
     rotate: true
   - name: vault_nomad_gossip_key
     generate: base64
+    keep: a gossip key changes in two runs, which damstack does not do yet
   - name: vault_nomad_acl_bootstrap_token
     generate: uuid
+    keep: Nomad's ACLs were bootstrapped with it
   - name: vault_nomad_consul_token
     generate: uuid
   - name: vault_vault_consul_token
@@ -181,17 +185,21 @@ secrets:
     rotate: true
   - name: vault_tofu_state_passphrase
     generate: hex
+    keep: the OpenTofu state is encrypted with it
   - name: vault_backup_password
     generate: password
+    keep: old backups need it
   - name: vault_backup_vault_token
     generate: uuid
   - name: vault_cloudflare_api_token
     checks: [{cloudflare-token: dns_zones}]
     ask: Cloudflare token for the DNS records (Zone DNS Edit and Zone Read on those domains)
+    new_at: https://dash.cloudflare.com/profile/api-tokens
     when: dns_provider=cloudflare
   - name: vault_cloudflare_traefik_token
     checks: [cloudflare-token]
     ask: Cloudflare token for the certificate of the admin pages (the same one does, or one for that domain only)
+    new_at: https://dash.cloudflare.com/profile/api-tokens
     when: dns_provider=cloudflare
   - name: vault_acme_dns_env
     ask: >-
@@ -200,6 +208,7 @@ secrets:
     when: dns_provider=other
   - name: vault_registry_password
     ask: The password or token the Nomad client pulls private images with
+    new_at: https://github.com/settings/tokens/new?scopes=read:packages&description=damstack
     when: private_registry=yes
   - name: vault_sso_google_client_secret
     ask: The secret of the Google OAuth client people sign in with
