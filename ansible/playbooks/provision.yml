@@ -340,6 +340,10 @@
             dest: "/opt/cni/{{ _cni_zip }}"
             checksum: "sha256:{{ _cni_url }}/consul-cni_{{ stack_consul_cni_version }}_SHA256SUMS"
             mode: '0644'
+          register: _cni_download
+          until: _cni_download is succeeded
+          retries: 5
+          delay: 5
 
         - name: consul-cni is unpacked into its release directory
           ansible.builtin.unarchive:
